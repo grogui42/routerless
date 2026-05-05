@@ -1,0 +1,10 @@
+secrets.yaml
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+dist/
+*.egg-info/
+.venv/
+.my-network

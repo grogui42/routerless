@@ -1,0 +1,13 @@
+subnet: "192.168.1.0/24"
+gateway: "192.168.1.1"
+dns:
+  - "192.168.1.1"
+  - "8.8.8.8"
+range:
+  start: "192.168.1.100"
+  end: "192.168.1.200"
+lease_time: "24h"
+
+# Static IP allocations split by device type via !include_dir_merge_list.
+# Add a new .yaml file in static_leases/ to extend without editing this file.
+static_leases: !include_dir_merge_list static_leases

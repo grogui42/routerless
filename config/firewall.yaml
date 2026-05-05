@@ -1,0 +1,13 @@
+rules:
+  - name: "Block IoT to WAN"
+    direction: forward
+    src: iot
+    dest: wan
+    action: DROP
+
+  - name: "Allow Home Assistant from LAN"
+    direction: input
+    src: lan
+    dest_port: 8123
+    protocol: tcp
+    action: ACCEPT

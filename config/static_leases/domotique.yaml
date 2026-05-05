@@ -1,0 +1,14 @@
+- name: "Philips Hue Bridge"
+  mac: "AA:BB:CC:DD:EE:01"
+  ip: "192.168.1.10"
+  hostname: "hue-bridge"
+
+- name: "Xiaomi Gateway"
+  mac: "AA:BB:CC:DD:EE:02"
+  ip: "192.168.1.11"
+  hostname: "xiaomi-gateway"
+
+- name: "Sonos One (salon)"
+  mac: "AA:BB:CC:DD:EE:03"
+  ip: "192.168.1.12"
+  hostname: "sonos-salon"

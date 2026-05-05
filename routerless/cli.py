@@ -1,0 +1,760 @@
+"""routerless CLI."""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, Sequence
+
+import click
+import yaml
+from pydantic import ValidationError
+
+from routerless.adapters.base import BaseAdapter
+from routerless.adapters.bbox_ultim import BboxUltimAdapter
+from routerless.adapters.openwrt import OpenWrtAdapter
+from routerless.adapters.qnap_qhora import QnapQhoraAdapter
+from routerless.models.config import NetworkConfig, TargetType, parse_config
+from routerless.yaml_loader import SecretNotFoundError, load_config
+
+if TYPE_CHECKING:
+    from routerless.models.config import DHCPConfig, FirewallConfig, NATConfig
+
+_ADAPTER_MAP: dict[TargetType, type[BaseAdapter]] = {
+    TargetType.BBOX_ULTIM: BboxUltimAdapter,
+    TargetType.OPENWRT: OpenWrtAdapter,
+    TargetType.QNAP_QHORA: QnapQhoraAdapter,
+}
+
+_SECTION_CHOICES = click.Choice(["dhcp", "nat", "firewall"])
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _load(config_path: str) -> NetworkConfig:
+    try:
+        raw = load_config(config_path)
+    except FileNotFoundError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except SecretNotFoundError as exc:
+        raise click.ClickException(f"Secret resolution failed: {exc}") from exc
+    try:
+        return parse_config(raw)
+    except ValidationError as exc:
+        raise click.ClickException(f"Configuration invalid:\n{exc}") from exc
+
+
+def _get_adapter(cfg: NetworkConfig, target_name: str) -> BaseAdapter:
+    if target_name not in cfg.targets:
+        available = ", ".join(cfg.targets) or "(none)"
+        raise click.ClickException(
+            f"Target '{target_name}' not found in configuration. Available: {available}"
+        )
+    target = cfg.targets[target_name]
+    adapter_cls = _ADAPTER_MAP.get(target.type)
+    if adapter_cls is None:
+        raise click.ClickException(f"No adapter implemented for target type '{target.type.value}'")
+    return adapter_cls(target)
+
+
+def _resolve_sections(sections: Sequence[str]) -> list[str]:
+    """Return the effective section list — all sections if none specified."""
+    return list(sections) if sections else ["dhcp", "nat", "firewall"]
+
+
+# ---------------------------------------------------------------------------
+# CLI root
+# ---------------------------------------------------------------------------
+
+@click.group()
+@click.version_option()
+def cli() -> None:
+    """routerless — router-agnostic network configuration manager."""
+
+
+# ---------------------------------------------------------------------------
+# init — template constants
+# ---------------------------------------------------------------------------
+
+_TEMPLATE_CONFIGURATION = """\
+version: "1.0"
+
+# ---------------------------------------------------------------------------
+# Targets — one entry per router/box. Credentials are loaded from secrets.yaml
+# ---------------------------------------------------------------------------
+targets:
+  bbox:
+    type: bbox_ultim
+    host: !secret bbox_host
+    password: !secret bbox_password
+
+  # openwrt:
+  #   type: openwrt
+  #   host: !secret openwrt_host
+  #   ssh_user: root
+  #   ssh_key: !secret openwrt_ssh_key
+  #   ssh_port: 22
+
+  # qhora:
+  #   type: qnap_qhora
+  #   host: !secret qhora_host
+  #   ssh_user: admin
+  #   ssh_password: !secret qhora_ssh_password
+  #   ssh_port: 22200
+
+# ---------------------------------------------------------------------------
+# Configuration sections — split into separate files via !include
+# ---------------------------------------------------------------------------
+dhcp:     !include dhcp.yaml
+nat:      !include nat.yaml
+firewall: !include firewall.yaml
+"""
+
+_TEMPLATE_SECRETS = """\
+# Copy this file to secrets.yaml and fill in your credentials.
+# secrets.yaml is gitignored and must NEVER be committed.
+
+bbox_host: "192.168.1.254"
+bbox_password: "your_bbox_password"
+
+# openwrt_host: "192.168.1.1"
+# openwrt_ssh_key: "~/.ssh/id_ed25519"
+
+# qhora_host: "192.168.1.2"
+# qhora_ssh_password: "your_qhora_password"
+"""
+
+_TEMPLATE_DHCP = """\
+subnet: "192.168.1.0/24"
+gateway: "192.168.1.1"
+dns:
+  - "192.168.1.1"
+  - "8.8.8.8"
+range:
+  start: "192.168.1.100"
+  end:   "192.168.1.200"
+lease_time: "24h"
+
+# Static DHCP reservations — add as many as needed.
+static_leases:
+  - name: "NAS"
+    mac: "AA:BB:CC:DD:EE:FF"
+    ip:  "192.168.1.20"
+    hostname: nas
+"""
+
+_TEMPLATE_NAT = """\
+port_forwards:
+  - name: "Home Assistant"
+    protocol: tcp
+    external_port: 8123
+    internal_ip: "192.168.1.20"
+    internal_port: 8123
+"""
+
+_TEMPLATE_FIREWALL = """\
+rules:
+  - name: "Block IoT to WAN"
+    direction: forward
+    src: iot
+    dest: wan
+    action: DROP
+"""
+
+_TEMPLATE_GITIGNORE = """\
+# Secrets — never commit
+secrets.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.pytest_cache/
+"""
+
+
+def _write_file(path: Path, content: str, force: bool) -> bool:
+    """Write *content* to *path*. Return True if written, False if skipped."""
+    if path.exists() and not force:
+        click.echo(f"  {click.style('skip', fg='yellow')}  {path}  (already exists — use --force to overwrite)")
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    verb = "overwrite" if path.exists() else "create"
+    click.echo(f"  {click.style('create', fg='green')}  {path}")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# init
+# ---------------------------------------------------------------------------
+
+@cli.command("init")
+@click.argument("directory", default=".", type=click.Path(file_okay=False))
+@click.option("--force", is_flag=True, default=False, help="Overwrite existing files.")
+def cmd_init(directory: str, force: bool) -> None:
+    """Create a new routerless configuration in DIRECTORY.
+
+    Generates a ready-to-edit file tree:
+
+    \b
+      <directory>/
+        configuration.yaml   — main config (targets + !include sections)
+        secrets.yaml.example — credential template (copy to secrets.yaml)
+        dhcp.yaml            — DHCP settings and static leases
+        nat.yaml             — port-forwarding rules
+        firewall.yaml        — firewall rules
+        .gitignore           — ignores secrets.yaml
+
+    \b
+    Examples:
+      routerless init
+      routerless init ~/my-network --force
+    """
+    root = Path(directory)
+
+    click.echo(f"Initialising routerless config in {click.style(str(root.resolve()), bold=True)}\n")
+
+    files = [
+        (root / "configuration.yaml",   _TEMPLATE_CONFIGURATION),
+        (root / "secrets.yaml.example", _TEMPLATE_SECRETS),
+        (root / "dhcp.yaml",            _TEMPLATE_DHCP),
+        (root / "nat.yaml",             _TEMPLATE_NAT),
+        (root / "firewall.yaml",        _TEMPLATE_FIREWALL),
+        (root / ".gitignore",           _TEMPLATE_GITIGNORE),
+    ]
+
+    written = sum(_write_file(p, content, force) for p, content in files)
+
+    click.echo("")
+    if written:
+        click.echo(click.style(f"Done! {written} file(s) created.", fg="green", bold=True))
+        click.echo("")
+        click.echo("Next steps:")
+        click.echo(f"  1. cp {root / 'secrets.yaml.example'} {root / 'secrets.yaml'}")
+        click.echo(f"  2. Edit {root / 'secrets.yaml'} with your router credentials")
+        click.echo(f"  3. routerless validate {root / 'configuration.yaml'}")
+        click.echo(f"  4. routerless plan --target bbox {root / 'configuration.yaml'}")
+    else:
+        click.echo("Nothing written — all files already exist. Use --force to overwrite.")
+
+
+# ---------------------------------------------------------------------------
+# validate
+# ---------------------------------------------------------------------------
+
+@cli.command("validate")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+def cmd_validate(config: str) -> None:
+    """Validate a configuration file (and all its !include references)."""
+    cfg = _load(config)
+    click.echo(f"Configuration is valid.")
+    click.echo(f"  Targets  : {', '.join(cfg.targets) or '(none)'}")
+    if cfg.dhcp:
+        click.echo(f"  DHCP     : {len(cfg.dhcp.static_leases)} static lease(s)")
+    if cfg.nat:
+        click.echo(f"  NAT      : {len(cfg.nat.port_forwards)} port-forward(s)")
+    if cfg.firewall:
+        click.echo(f"  Firewall : {len(cfg.firewall.rules)} rule(s)")
+
+
+# ---------------------------------------------------------------------------
+# apply
+# ---------------------------------------------------------------------------
+
+@cli.command("apply")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+@click.option(
+    "--section", "-s",
+    multiple=True,
+    type=_SECTION_CHOICES,
+    help="Section(s) to apply. Repeat to apply multiple. Defaults to all.",
+)
+def cmd_apply(config: str, target: str, section: tuple[str, ...]) -> None:
+    """Apply configuration to a target device.
+
+    Examples:\n
+      routerless apply --target openwrt\n
+      routerless apply --target openwrt --section dhcp\n
+      routerless apply --target openwrt --section nat --section firewall
+    """
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    sections = _resolve_sections(section)
+
+    for sec in sections:
+        if sec == "dhcp":
+            if cfg.dhcp is None:
+                click.echo("  dhcp: no configuration, skipping.")
+                continue
+            click.echo(f"  Applying dhcp ({len(cfg.dhcp.static_leases)} static leases)…")
+            adapter.apply_dhcp(cfg.dhcp)
+            click.echo("  dhcp: done.")
+        elif sec == "nat":
+            if cfg.nat is None:
+                click.echo("  nat: no configuration, skipping.")
+                continue
+            click.echo(f"  Applying nat ({len(cfg.nat.port_forwards)} port-forwards)…")
+            adapter.apply_nat(cfg.nat)
+            click.echo("  nat: done.")
+        elif sec == "firewall":
+            if cfg.firewall is None:
+                click.echo("  firewall: no configuration, skipping.")
+                continue
+            click.echo(f"  Applying firewall ({len(cfg.firewall.rules)} rules)…")
+            adapter.apply_firewall(cfg.firewall)
+            click.echo("  firewall: done.")
+
+
+# ---------------------------------------------------------------------------
+# dump
+# ---------------------------------------------------------------------------
+
+@cli.command("dump")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+@click.option(
+    "--output", "-o",
+    default=None,
+    type=click.Path(),
+    help="Write YAML output to this file instead of stdout.",
+)
+def cmd_dump(config: str, target: str, output: str | None) -> None:
+    """Read current configuration from a device and print it as YAML."""
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    dumped = adapter.dump()
+    raw = dumped.model_dump(exclude_none=True, exclude_unset=True)
+    out = yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    if output:
+        Path(output).write_text(out, encoding="utf-8")
+        click.echo(f"Configuration written to {output}")
+    else:
+        click.echo(out)
+
+
+# ---------------------------------------------------------------------------
+# diff  (stub — compares dump() vs local config)
+# ---------------------------------------------------------------------------
+
+@cli.command("diff")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+@click.option(
+    "--section", "-s",
+    multiple=True,
+    type=_SECTION_CHOICES,
+    help="Section(s) to diff. Defaults to all.",
+)
+def cmd_diff(config: str, target: str, section: tuple[str, ...]) -> None:
+    """Show differences between local config and running device config."""
+    import difflib
+
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    sections = _resolve_sections(section)
+
+    local_raw = cfg.model_dump(exclude_none=True, exclude_unset=True)
+    device_cfg = adapter.dump()
+    device_raw = device_cfg.model_dump(exclude_none=True, exclude_unset=True)
+
+    for sec in sections:
+        local_sec = local_raw.get(sec)
+        device_sec = device_raw.get(sec)
+        local_yaml = yaml.dump({sec: local_sec}, default_flow_style=False, allow_unicode=True)
+        device_yaml = yaml.dump({sec: device_sec}, default_flow_style=False, allow_unicode=True)
+        diff = list(
+            difflib.unified_diff(
+                device_yaml.splitlines(keepends=True),
+                local_yaml.splitlines(keepends=True),
+                fromfile=f"device/{sec}",
+                tofile=f"local/{sec}",
+            )
+        )
+        if diff:
+            click.echo("".join(diff))
+        else:
+            click.echo(f"{sec}: no differences.")
+
+
+# ---------------------------------------------------------------------------
+# plan helpers  (pure functions — testable without CLI)
+# ---------------------------------------------------------------------------
+
+PlanAction = Literal["add", "change", "remove"]
+PlanItem = tuple[PlanAction, str]
+
+
+def _plan_dhcp(
+    local: "DHCPConfig | None",
+    device: "DHCPConfig | None",
+) -> list[PlanItem]:
+    local_map = {l.mac.upper(): l for l in (local.static_leases if local else [])}
+    device_map = {l.mac.upper(): l for l in (device.static_leases if device else [])}
+    items: list[PlanItem] = []
+    for mac, lease in local_map.items():
+        if mac not in device_map:
+            items.append(("add", f'lease "{lease.name}"  {mac}  →  {lease.ip}'))
+        else:
+            d = device_map[mac]
+            changes: list[str] = []
+            if lease.ip != d.ip:
+                changes.append(f"ip: {d.ip} → {lease.ip}")
+            if lease.name != d.name:
+                changes.append(f"name: {d.name!r} → {lease.name!r}")
+            if changes:
+                items.append(("change", f'lease "{lease.name}"  {mac}  {", ".join(changes)}'))
+    for mac, lease in device_map.items():
+        if mac not in local_map:
+            items.append(("remove", f'lease "{lease.name}"  {mac}  {lease.ip}'))
+    return items
+
+
+def _plan_nat(
+    local: "NATConfig | None",
+    device: "NATConfig | None",
+) -> list[PlanItem]:
+    local_map = {
+        (pf.external_port, pf.protocol): pf
+        for pf in (local.port_forwards if local else [])
+    }
+    device_map = {
+        (pf.external_port, pf.protocol): pf
+        for pf in (device.port_forwards if device else [])
+    }
+    items: list[PlanItem] = []
+    for key, pf in local_map.items():
+        proto = pf.protocol.value
+        if key not in device_map:
+            items.append(("add", f'rule "{pf.name}"  {proto}  :{pf.external_port} → {pf.internal_ip}:{pf.internal_port}'))
+        else:
+            d = device_map[key]
+            changes: list[str] = []
+            if pf.internal_ip != d.internal_ip:
+                changes.append(f"dest: {d.internal_ip} → {pf.internal_ip}")
+            if pf.internal_port != d.internal_port:
+                changes.append(f"dest-port: {d.internal_port} → {pf.internal_port}")
+            if pf.name != d.name:
+                changes.append(f"name: {d.name!r} → {pf.name!r}")
+            if changes:
+                items.append(("change", f'rule "{pf.name}"  {proto}  :{pf.external_port}  {", ".join(changes)}'))
+    for key, pf in device_map.items():
+        if key not in local_map:
+            proto = pf.protocol.value
+            items.append(("remove", f'rule "{pf.name}"  {proto}  :{pf.external_port} → {pf.internal_ip}:{pf.internal_port}'))
+    return items
+
+
+def _plan_firewall(
+    local: "FirewallConfig | None",
+    device: "FirewallConfig | None",
+) -> list[PlanItem]:
+    local_map = {r.name: r for r in (local.rules if local else [])}
+    device_map = {r.name: r for r in (device.rules if device else [])}
+    items: list[PlanItem] = []
+    for name, rule in local_map.items():
+        if name not in device_map:
+            items.append(("add", f'rule "{name}"  {rule.direction.value}  {rule.action.value}'))
+        else:
+            d = device_map[name]
+            changes: list[str] = []
+            if rule.action != d.action:
+                changes.append(f"action: {d.action.value} → {rule.action.value}")
+            if rule.direction != d.direction:
+                changes.append(f"direction: {d.direction.value} → {rule.direction.value}")
+            if rule.src != d.src:
+                changes.append(f"src: {d.src!r} → {rule.src!r}")
+            if rule.dest != d.dest:
+                changes.append(f"dest: {d.dest!r} → {rule.dest!r}")
+            if changes:
+                items.append(("change", f'rule "{name}"  {", ".join(changes)}'))
+    for name, rule in device_map.items():
+        if name not in local_map:
+            items.append(("remove", f'rule "{name}"  {rule.direction.value}  {rule.action.value}'))
+    return items
+
+
+_PLAN_SYMBOL: dict[PlanAction, str] = {
+    "add":    "  + ADD   ",
+    "change": "  ~ CHANGE",
+    "remove": "  - REMOVE",
+}
+_PLAN_COLOR: dict[PlanAction, str] = {
+    "add":    "green",
+    "change": "yellow",
+    "remove": "red",
+}
+
+
+# ---------------------------------------------------------------------------
+# plan
+# ---------------------------------------------------------------------------
+
+@cli.command("plan")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+@click.option(
+    "--section", "-s",
+    multiple=True,
+    type=_SECTION_CHOICES,
+    help="Section(s) to plan. Defaults to all.",
+)
+def cmd_plan(config: str, target: str, section: tuple[str, ...]) -> None:
+    """Preview changes that would be applied (like terraform plan).
+
+    Reads the current device configuration and compares it to the local YAML
+    config file.  Changes are displayed with:
+
+    \b
+      + ADD     entry present in local config but not on device
+      ~ CHANGE  entry present on both sides but with different values
+      - REMOVE  entry on device that is absent from local config
+
+    Examples:\n
+      routerless plan --target bbox\n
+      routerless plan --target openwrt --section dhcp --section nat
+    """
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    sections = _resolve_sections(section)
+
+    target_type = cfg.targets[target].type.value
+    click.echo(f"Comparing local config against target '{target}' ({target_type})…")
+    click.echo("")
+
+    try:
+        device_cfg = adapter.dump()
+    except Exception as exc:
+        raise click.ClickException(f"Failed to read device configuration: {exc}") from exc
+
+    total_add = total_change = total_remove = 0
+    section_planners = {
+        "dhcp":     lambda: _plan_dhcp(cfg.dhcp, device_cfg.dhcp),
+        "nat":      lambda: _plan_nat(cfg.nat, device_cfg.nat),
+        "firewall": lambda: _plan_firewall(cfg.firewall, device_cfg.firewall),
+    }
+
+    for sec in sections:
+        local_sec = getattr(cfg, sec, None)
+
+        if local_sec is None:
+            click.echo(click.style(f"Section: {sec}", bold=True) + "  " + click.style("(no local config — skipped)", dim=True))
+            click.echo("")
+            continue
+
+        items = section_planners[sec]()
+
+        n_add = sum(1 for a, _ in items if a == "add")
+        n_change = sum(1 for a, _ in items if a == "change")
+        n_remove = sum(1 for a, _ in items if a == "remove")
+        total_add += n_add
+        total_change += n_change
+        total_remove += n_remove
+
+        header = click.style(f"Section: {sec}", bold=True)
+        if local_sec is None:
+            click.echo(f"{header}  " + click.style("(no local config — skipped)", dim=True))
+        elif not items:
+            click.echo(f"{header}  " + click.style("✓ no changes", fg="green"))
+        else:
+            summary = "  ".join(filter(None, [
+                click.style(f"+{n_add}", fg="green")   if n_add    else "",
+                click.style(f"~{n_change}", fg="yellow") if n_change else "",
+                click.style(f"-{n_remove}", fg="red")  if n_remove else "",
+            ]))
+            click.echo(f"{header}  ({summary})")
+            for action, desc in items:
+                symbol = click.style(_PLAN_SYMBOL[action], fg=_PLAN_COLOR[action], bold=True)
+                click.echo(f"{symbol}  {desc}")
+        click.echo("")
+
+    # Summary
+    if total_add == 0 and total_change == 0 and total_remove == 0:
+        click.echo(click.style("Plan: no changes — device is already in sync.", fg="green", bold=True))
+    else:
+        parts: list[str] = []
+        if total_add:
+            parts.append(click.style(f"{total_add} to add", fg="green", bold=True))
+        if total_change:
+            parts.append(click.style(f"{total_change} to change", fg="yellow", bold=True))
+        if total_remove:
+            parts.append(click.style(f"{total_remove} to destroy", fg="red", bold=True))
+        click.echo("Plan: " + ", ".join(parts) + ".")
+        sec_flags = " ".join(f"--section {s}" for s in sections) if len(sections) < 3 else ""
+        apply_cmd = f"routerless apply --target {target} {sec_flags} {config}".strip()
+        click.echo(f"      Run {click.style(apply_cmd, bold=True)} to apply.")
+
+
+# ---------------------------------------------------------------------------
+# Uptime helper
+# ---------------------------------------------------------------------------
+
+
+def _fmt_uptime(seconds: int) -> str:
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes = rem // 60
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    parts.append(f"{minutes}m")
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# status  (Bbox-specific)
+# ---------------------------------------------------------------------------
+
+@cli.command("status")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+def cmd_status(config: str, target: str) -> None:
+    """Show device status (WAN/LAN, WiFi, uptime…)."""
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    try:
+        s = adapter.get_status()
+    except NotImplementedError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    col = 18
+    model_line = s.model
+    if s.serial:
+        model_line += f"  ({s.serial})"
+    click.echo(f"{'Model':<{col}}: {model_line}")
+    if s.lan_ip:
+        click.echo(f"{'LAN IP':<{col}}: {s.lan_ip}")
+    if s.wan_ip:
+        click.echo(f"{'WAN IP':<{col}}: {s.wan_ip}")
+    if s.internet_state:
+        click.echo(f"{'Internet':<{col}}: {s.internet_state}")
+    if s.voip_status:
+        click.echo(f"{'VoIP':<{col}}: {s.voip_status}")
+    if s.wifi_24_enabled is not None:
+        click.echo(f"{'WiFi 2.4 GHz':<{col}}: {'ON' if s.wifi_24_enabled else 'OFF'}")
+    if s.wifi_5_enabled is not None:
+        click.echo(f"{'WiFi 5 GHz':<{col}}: {'ON' if s.wifi_5_enabled else 'OFF'}")
+    click.echo(f"{'Devices':<{col}}: {s.device_count}")
+    click.echo(f"{'Uptime':<{col}}: {_fmt_uptime(s.uptime_seconds)}")
+
+
+# ---------------------------------------------------------------------------
+# devices  (Bbox-specific)
+# ---------------------------------------------------------------------------
+
+@cli.command("devices")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+@click.option("--all", "show_all", is_flag=True, default=False, help="Include inactive devices.")
+def cmd_devices(config: str, target: str, show_all: bool) -> None:
+    """List connected devices.
+
+    By default only active (currently connected) devices are shown.
+    Use --all to include previously seen but currently offline devices.
+    """
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    try:
+        devices = adapter.get_devices(only_active=not show_all)
+    except NotImplementedError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if not devices:
+        click.echo("No devices found.")
+        return
+
+    # Column widths
+    ip_w = max(len(d.ip) for d in devices) + 2
+    mac_w = 19
+    host_w = max((len(d.hostname) for d in devices), default=8) + 2
+    type_w = 5
+
+    header = (
+        f"{'Device IP':<{ip_w}}"
+        f"{'MAC':<{mac_w}}"
+        f"{'Hostname':<{host_w}}"
+        f"{'Type':<{type_w}}"
+        f"Link"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+
+    for d in devices:
+        status_mark = "" if d.active else " [offline]"
+        click.echo(
+            f"{d.ip:<{ip_w}}"
+            f"{d.mac:<{mac_w}}"
+            f"{d.hostname:<{host_w}}"
+            f"{d.device_type:<{type_w}}"
+            f"{d.link}{status_mark}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# wifi  (Bbox-specific, with on/off subcommands)
+# ---------------------------------------------------------------------------
+
+@cli.group("wifi")
+def grp_wifi() -> None:
+    """Manage and inspect Bbox WiFi."""
+
+
+@grp_wifi.command("status")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+def cmd_wifi_status(config: str, target: str) -> None:
+    """Show WiFi radio status (SSID, channel, encryption, device count)."""
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    try:
+        radios = adapter.get_wifi()
+    except NotImplementedError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if not radios:
+        click.echo("No WiFi information available.")
+        return
+
+    header = f"{'Band':<10}{'Enabled':<9}{'Ch':<5}{'SSID':<24}{'Protocol':<14}{'Encryption':<12}Devices"
+    click.echo(header)
+    click.echo("-" * len(header))
+    for r in radios:
+        enabled = "ON" if r.enabled else "OFF"
+        ch = str(r.channel) if r.channel is not None else "-"
+        devs = str(r.device_count) if r.device_count is not None else ""
+        click.echo(
+            f"{r.band:<10}{enabled:<9}{ch:<5}{r.ssid:<24}{r.protocol:<14}{r.encryption:<12}{devs}"
+        )
+
+
+@grp_wifi.command("on")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+def cmd_wifi_on(config: str, target: str) -> None:
+    """Enable WiFi radios."""
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    try:
+        adapter.wifi_enable(True)
+    except NotImplementedError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo("WiFi enabled.")
+
+
+@grp_wifi.command("off")
+@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+def cmd_wifi_off(config: str, target: str) -> None:
+    """Disable WiFi radios."""
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    try:
+        adapter.wifi_enable(False)
+    except NotImplementedError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo("WiFi disabled.")
