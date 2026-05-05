@@ -403,8 +403,10 @@ def _plan_dhcp(
             changes: list[str] = []
             if lease.ip != d.ip:
                 changes.append(f"ip: {d.ip} → {lease.ip}")
-            if lease.name != d.name:
-                changes.append(f"name: {d.name!r} → {lease.name!r}")
+            local_host = lease.hostname or lease.name
+            device_host = d.hostname or d.name
+            if local_host != device_host:
+                changes.append(f"hostname: {device_host!r} → {local_host!r}")
             if changes:
                 items.append(("change", f'lease "{lease.name}"  {mac}  {", ".join(changes)}'))
     for mac, lease in device_map.items():

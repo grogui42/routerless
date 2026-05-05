@@ -147,7 +147,7 @@ class BboxUltimAdapter(BaseAdapter):
         )
 
     def _login(self, client: httpx.Client) -> None:
-        """Authenticate — sets the session cookie on *client*.
+        """Authenticate — sets the session cookie and fetches the btoken on *client*.
 
         Sends Referer/Origin headers as required by the Bbox API.
         Raises httpx.HTTPStatusError on failure (401 invalid password,
@@ -164,6 +164,12 @@ class BboxUltimAdapter(BaseAdapter):
             },
         )
         resp.raise_for_status()
+        # Fetch CSRF btoken — required as ?btoken=<token> for all mutating requests.
+        token_data = client.get("/device/token", headers=self._req_headers).json()
+        if isinstance(token_data, list) and token_data:
+            self._btoken: str = token_data[0].get("device", {}).get("token", "")
+        else:
+            self._btoken = ""
 
     def _logout(self, client: httpx.Client) -> None:
         try:
@@ -177,15 +183,18 @@ class BboxUltimAdapter(BaseAdapter):
         return resp.json()
 
     def _post(self, client: httpx.Client, path: str, data: dict[str, str]) -> None:
-        resp = client.post(path, data=data, headers=self._req_headers)
+        url = f"{path}?btoken={self._btoken}" if getattr(self, "_btoken", "") else path
+        resp = client.post(url, data=data, headers=self._req_headers)
         resp.raise_for_status()
 
     def _put(self, client: httpx.Client, path: str, data: dict[str, str]) -> None:
-        resp = client.put(path, data=data, headers=self._req_headers)
+        url = f"{path}?btoken={self._btoken}" if getattr(self, "_btoken", "") else path
+        resp = client.put(url, data=data, headers=self._req_headers)
         resp.raise_for_status()
 
     def _delete(self, client: httpx.Client, path: str) -> None:
-        resp = client.delete(path, headers=self._req_headers)
+        url = f"{path}?btoken={self._btoken}" if getattr(self, "_btoken", "") else path
+        resp = client.delete(url, headers=self._req_headers)
         resp.raise_for_status()
 
     # ------------------------------------------------------------------
@@ -219,27 +228,72 @@ class BboxUltimAdapter(BaseAdapter):
         return self._extract_list(self._get(client, "/dhcp/clients"), "dhcp", "clients")
 
     def _create_dhcp_client(self, client: httpx.Client, lease: StaticLease) -> None:
-        self._post(client, "/dhcp/clients", {
-            "enable": "1",
-            "device": lease.name,
-            "ipaddress": lease.ip,
-            "macaddress": lease.mac,
-            "hostname": lease.hostname or lease.name,
-        })
+        try:
+            self._post(client, "/dhcp/clients", {
+                "enable": "1",
+                "device": lease.name,
+                "ipaddress": lease.ip,
+                "macaddress": lease.mac,
+                "hostname": lease.hostname or lease.name,
+            })
+        except httpx.HTTPStatusError as exc:
+            raise httpx.HTTPStatusError(
+                f"{exc.response.status_code} creating lease "
+                f"name={lease.name!r} mac={lease.mac} ip={lease.ip}",
+                request=exc.request,
+                response=exc.response,
+            ) from exc
 
     def _delete_dhcp_client(self, client: httpx.Client, entry_id: int | str) -> None:
         self._delete(client, f"/dhcp/clients/{entry_id}")
+
+    def _apply_dhcp_range(self, client: httpx.Client, config: DHCPConfig) -> None:
+        """Update the Bbox dynamic DHCP pool range and lease time.
+
+        Must be called before creating static leases so that IPs used for
+        static reservations (e.g. .2–.139) are not inside the dynamic pool
+        (which would cause 400 on POST /dhcp/clients).
+
+        Endpoint: PUT /dhcp  (reverse-engineered, confirmed field names via XHR)
+        """
+        if not config.range:
+            return
+        start = config.range.get("start", "")
+        end = config.range.get("end", "")
+        if not start or not end:
+            return
+        # Convert lease_time "24h" → seconds for the Bbox API
+        lease_time_str = config.lease_time or "24h"
+        if lease_time_str.endswith("h"):
+            lease_seconds = str(int(lease_time_str[:-1]) * 3600)
+        elif lease_time_str.endswith("m"):
+            lease_seconds = str(int(lease_time_str[:-1]) * 60)
+        else:
+            lease_seconds = lease_time_str
+        self._put(client, "/dhcp", {
+            "dhcp.minaddress": start,
+            "dhcp.maxaddress": end,
+            "dhcp.leasetime": lease_seconds,
+        })
 
     def apply_dhcp(self, config: DHCPConfig) -> None:
         """Declaratively sync DHCP static reservations.
 
         - Leases in box but not in config → deleted.
         - Leases in config but not in box → created.
-        - Leases present in both but changed (IP or hostname) → deleted then re-created.
+        - Leases present in both but changed (name, IP, or hostname) → deleted then re-created.
+
+        Deletions are performed in a first pass so that IP addresses freed by
+        moves/removals are available before new creations begin (avoids 403 IP
+        conflicts when an IP is reassigned to a different device).
         """
         with self._make_client() as client:
             self._login(client)
             try:
+                # Step 0 — shrink the dynamic pool first so static IPs are not
+                # inside the range (Bbox returns 400 on such conflicts).
+                self._apply_dhcp_range(client, config)
+
                 existing = self._list_dhcp_clients(client)
                 existing_by_mac: dict[str, dict[str, Any]] = {
                     e["macaddress"].upper(): e
@@ -249,21 +303,27 @@ class BboxUltimAdapter(BaseAdapter):
                 desired_by_mac: dict[str, StaticLease] = {
                     lease.mac.upper(): lease for lease in config.static_leases
                 }
+
+                # Pass 1 — deletions: removed entries + entries that need re-creation.
+                to_create: list[StaticLease] = []
                 for mac, entry in existing_by_mac.items():
                     if mac not in desired_by_mac:
                         self._delete_dhcp_client(client, entry["id"])
                 for mac, lease in desired_by_mac.items():
                     existing_entry = existing_by_mac.get(mac)
                     if existing_entry:
-                        want_ip = lease.ip
-                        want_host = lease.hostname or lease.name
                         have_ip = existing_entry.get("ipaddress", "")
                         have_host = existing_entry.get("hostname", "")
-                        if want_ip != have_ip or want_host != have_host:
+                        want_host = lease.hostname or lease.name
+                        if lease.ip != have_ip or want_host != have_host:
                             self._delete_dhcp_client(client, existing_entry["id"])
-                            self._create_dhcp_client(client, lease)
+                            to_create.append(lease)
                     else:
-                        self._create_dhcp_client(client, lease)
+                        to_create.append(lease)
+
+                # Pass 2 — creations: all IPs freed in pass 1 are now available.
+                for lease in to_create:
+                    self._create_dhcp_client(client, lease)
             finally:
                 self._logout(client)
 

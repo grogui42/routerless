@@ -114,9 +114,11 @@ class TestApplyDhcp:
         config = DHCPConfig(
             subnet="192.168.1.0/24",
             gateway="192.168.1.1",
-            static_leases=[StaticLease(name="Hub", mac="AA:BB:CC:DD:EE:FF", ip="192.168.1.10", hostname="Hub")],
+            static_leases=[StaticLease(name="Hub", mac="AA:BB:CC:DD:EE:FF", ip="192.168.1.10")],
         )
-        existing = [{"id": 1, "macaddress": "AA:BB:CC:DD:EE:FF", "ipaddress": "192.168.1.10", "hostname": "Hub"}]
+        # Bbox returns hostname=name (our POST sends hostname=lease.name)
+        existing = [{"id": 1, "macaddress": "AA:BB:CC:DD:EE:FF", "ipaddress": "192.168.1.10",
+                     "hostname": "Hub"}]
         mock_client = MagicMock()
         mock_client.get.return_value = _bbox_resp(self._dhcp_response(existing))
 
@@ -167,6 +169,95 @@ class TestApplyDhcp:
 
         mock_client.delete.assert_called_once()
         assert "/3" in mock_client.delete.call_args[0][0]
+
+    def test_name_differs_from_hostname_triggers_recreate(self) -> None:
+        """Bbox stores lease.name as hostname. When stored hostname != local name,
+        apply must delete+recreate so the friendly name is updated in the Bbox UI."""
+        adapter = _adapter()
+        config = DHCPConfig(
+            subnet="192.168.1.0/24",
+            gateway="192.168.1.1",
+            static_leases=[StaticLease(name="Deco-Principal", mac="AA:BB:CC:DD:EE:FF",
+                                       ip="192.168.1.10")],
+        )
+        # Bbox still has old hostname "deco-m4r" (before name was set)
+        existing = [{"id": 5, "macaddress": "AA:BB:CC:DD:EE:FF", "ipaddress": "192.168.1.10",
+                     "hostname": "deco-m4r"}]
+        mock_client = MagicMock()
+        mock_client.get.return_value = _bbox_resp(self._dhcp_response(existing))
+        mock_client.delete.return_value = _bbox_resp({})
+        mock_client.post.return_value = _bbox_resp({})
+
+        p_make, p_login, p_logout = _mock_http(adapter, mock_client)
+        with p_make, p_login, p_logout:
+            adapter.apply_dhcp(config)
+
+        mock_client.delete.assert_called_once()
+        mock_client.post.assert_called_once()
+        post_data = mock_client.post.call_args[1]["data"]
+        assert post_data["device"] == "Deco-Principal"
+        assert post_data["hostname"] == "Deco-Principal"
+
+    def test_name_equals_hostname_no_recreate(self) -> None:
+        """After apply, Bbox hostname == lease.name. Subsequent applies are idempotent."""
+        adapter = _adapter()
+        config = DHCPConfig(
+            subnet="192.168.1.0/24",
+            gateway="192.168.1.1",
+            static_leases=[StaticLease(name="Deco-Principal", mac="AA:BB:CC:DD:EE:FF",
+                                       ip="192.168.1.10")],
+        )
+        # Bbox has already been updated: hostname == name
+        existing = [{"id": 5, "macaddress": "AA:BB:CC:DD:EE:FF", "ipaddress": "192.168.1.10",
+                     "hostname": "Deco-Principal"}]
+        mock_client = MagicMock()
+        mock_client.get.return_value = _bbox_resp(self._dhcp_response(existing))
+
+        p_make, p_login, p_logout = _mock_http(adapter, mock_client)
+        with p_make, p_login, p_logout:
+            adapter.apply_dhcp(config)
+
+        mock_client.delete.assert_not_called()
+        mock_client.post.assert_not_called()
+
+    def test_deletes_before_creates_on_ip_conflict(self) -> None:
+        """All deletions must happen before creations so freed IPs are available
+        (avoids 403 when reassigning an IP to a different device in one apply)."""
+        adapter = _adapter()
+        # DeviceA moves from .10 to .20; DeviceB is new at .10.
+        # If creates ran first, DeviceB would collide with DeviceA still at .10.
+        config = DHCPConfig(
+            subnet="192.168.1.0/24",
+            gateway="192.168.1.1",
+            static_leases=[
+                StaticLease(name="DeviceB", mac="BB:BB:BB:BB:BB:BB",
+                            ip="192.168.1.10", hostname="device-b"),
+                StaticLease(name="DeviceA", mac="AA:AA:AA:AA:AA:AA",
+                            ip="192.168.1.20", hostname="device-a"),
+            ],
+        )
+        existing = [{"id": 1, "macaddress": "AA:AA:AA:AA:AA:AA", "ipaddress": "192.168.1.10",
+                     "hostname": "device-a", "device": "DeviceA"}]
+        mock_client = MagicMock()
+        mock_client.get.return_value = _bbox_resp(self._dhcp_response(existing))
+        mock_client.delete.return_value = _bbox_resp({})
+        mock_client.post.return_value = _bbox_resp({})
+
+        call_order: list[str] = []
+        mock_client.delete.side_effect = lambda *a, **kw: call_order.append("delete") or MagicMock()
+        mock_client.post.side_effect = lambda *a, **kw: call_order.append("post") or _bbox_resp({})
+
+        p_make, p_login, p_logout = _mock_http(adapter, mock_client)
+        with p_make, p_login, p_logout:
+            adapter.apply_dhcp(config)
+
+        # Both delete and post must have been called
+        assert "delete" in call_order
+        assert "post" in call_order
+        # All deletes must precede all creates
+        last_delete = max(i for i, op in enumerate(call_order) if op == "delete")
+        first_post = min(i for i, op in enumerate(call_order) if op == "post")
+        assert last_delete < first_post, f"delete/create order wrong: {call_order}"
 
 
 # ---------------------------------------------------------------------------
