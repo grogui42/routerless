@@ -1,4 +1,4 @@
-"""Tests for the `export` command and _merge_section helper."""
+"""Tests for the `import` command and _merge_section helper."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,7 +53,7 @@ def _device_cfg(
     )
 
 
-def _run_export(device_cfg: NetworkConfig, args: list[str], input: str = "") -> tuple[int, str]:
+def _run_import(device_cfg: NetworkConfig, args: list[str], input: str = "") -> tuple[int, str]:
     runner = CliRunner()
     adapter_mock = MagicMock()
     adapter_mock.dump.return_value = device_cfg
@@ -63,7 +63,7 @@ def _run_export(device_cfg: NetworkConfig, args: list[str], input: str = "") -> 
             patch("routerless.cli._load", return_value=NetworkConfig(targets={"router": TARGET_CFG})),
             patch("routerless.cli._get_adapter", return_value=adapter_mock),
         ):
-            result = runner.invoke(cli, ["export", "--target", "router", "config.yaml"] + args, input=input)
+            result = runner.invoke(cli, ["import", "--target", "router", "config.yaml"] + args, input=input)
             # Collect output files from isolated filesystem
             files = {p.name: p.read_text() for p in Path(".").glob("*.yaml") if p.name != "config.yaml"}
     return result.exit_code, result.output, files
@@ -132,10 +132,10 @@ class TestMergeSection:
 
 
 # ---------------------------------------------------------------------------
-# cmd_export — file creation
+# cmd_import — file creation
 # ---------------------------------------------------------------------------
 
-class TestCmdExportCreate:
+class TestCmdImportCreate:
     def test_creates_section_files_when_absent(self) -> None:
         device = _device_cfg(leases=[_LEASE_A], pfs=[_PF_A], rules=[_RULE_A])
         runner = CliRunner()
@@ -147,7 +147,7 @@ class TestCmdExportCreate:
                 patch("routerless.cli._load", return_value=NetworkConfig(targets={"r": TARGET_CFG})),
                 patch("routerless.cli._get_adapter", return_value=adapter_mock),
             ):
-                result = runner.invoke(cli, ["export", "--target", "r", "config.yaml"])
+                result = runner.invoke(cli, ["import", "--target", "r", "config.yaml"])
             assert result.exit_code == 0, result.output
             assert Path("dhcp.yaml").exists()
             assert Path("nat.yaml").exists()
@@ -166,7 +166,7 @@ class TestCmdExportCreate:
                 patch("routerless.cli._load", return_value=NetworkConfig(targets={"r": TARGET_CFG})),
                 patch("routerless.cli._get_adapter", return_value=adapter_mock),
             ):
-                result = runner.invoke(cli, ["export", "--target", "r", "--section", "nat", "config.yaml"])
+                result = runner.invoke(cli, ["import", "--target", "r", "--section", "nat", "config.yaml"])
             assert result.exit_code == 0, result.output
             assert Path("nat.yaml").exists()
             assert not Path("dhcp.yaml").exists()
@@ -183,7 +183,7 @@ class TestCmdExportCreate:
                 patch("routerless.cli._get_adapter", return_value=adapter_mock),
             ):
                 result = runner.invoke(
-                    cli, ["export", "--target", "r", "--section", "dhcp", "--output-dir", "out", "config.yaml"]
+                    cli, ["import", "--target", "r", "--section", "dhcp", "--output-dir", "out", "config.yaml"]
                 )
             assert result.exit_code == 0, result.output
             assert Path("out/dhcp.yaml").exists()
@@ -199,17 +199,35 @@ class TestCmdExportCreate:
                 patch("routerless.cli._load", return_value=NetworkConfig(targets={"r": TARGET_CFG})),
                 patch("routerless.cli._get_adapter", return_value=adapter_mock),
             ):
-                result = runner.invoke(cli, ["export", "--target", "r", "--section", "nat", "config.yaml"])
+                result = runner.invoke(cli, ["import", "--target", "r", "--section", "nat", "config.yaml"])
             assert result.exit_code == 0, result.output
             assert "skipped" in result.output
             assert not Path("nat.yaml").exists()
 
+    def test_config_dir_arg_defaults_output_to_that_dir(self) -> None:
+        """Passing a directory as CONFIG should write files there, not to cwd."""
+        device = _device_cfg(leases=[_LEASE_A])
+        runner = CliRunner()
+        adapter_mock = MagicMock()
+        adapter_mock.dump.return_value = device
+        with runner.isolated_filesystem():
+            Path("mynet").mkdir()
+            Path("mynet/configuration.yaml").write_text("version: '1.0'\ntargets: {}\n")
+            with (
+                patch("routerless.cli._load", return_value=NetworkConfig(targets={"r": TARGET_CFG})),
+                patch("routerless.cli._get_adapter", return_value=adapter_mock),
+            ):
+                result = runner.invoke(cli, ["import", "--target", "r", "--section", "dhcp", "mynet"])
+            assert result.exit_code == 0, result.output
+            assert Path("mynet/dhcp.yaml").exists()
+            assert not Path("dhcp.yaml").exists()
+
 
 # ---------------------------------------------------------------------------
-# cmd_export — file exists (diff + prompt)
+# cmd_import — file exists (diff + prompt)
 # ---------------------------------------------------------------------------
 
-class TestCmdExportExistingFile:
+class TestCmdImportExistingFile:
     def _run(self, device: NetworkConfig, existing_yaml: str, section: str, input: str) -> tuple[int, str, str]:
         runner = CliRunner()
         adapter_mock = MagicMock()
@@ -224,7 +242,7 @@ class TestCmdExportExistingFile:
             ):
                 result = runner.invoke(
                     cli,
-                    ["export", "--target", "r", "--section", section, "config.yaml"],
+                    ["import", "--target", "r", "--section", section, "config.yaml"],
                     input=input,
                 )
             final_content = Path(filename).read_text()

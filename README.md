@@ -163,19 +163,19 @@ routerless apply --target openwrt ~/my-network
 routerless apply --target openwrt --section nat --section firewall ~/my-network/configuration.yaml
 ```
 
-### `export`
+### `import`
 
 Read the current device configuration and write it to section files.
 
 ```bash
-# Export all sections to current directory
-routerless export --target bbox
+# Import all sections to current directory
+routerless import --target bbox
 
-# Export only NAT rules
-routerless export --target bbox --section nat
+# Import only NAT rules
+routerless import --target bbox --section nat
 
-# Export from a specific config directory
-routerless export --target bbox --output-dir ./exported ~/my-network
+# Import from a specific config directory
+routerless import --target bbox --output-dir ./imported ~/my-network
 ```
 
 Writes `dhcp.yaml`, `nat.yaml`, and `firewall.yaml` into the output directory (`.` by default).
@@ -195,12 +195,12 @@ Action [o=override / a=append / s=skip] >
 
 - **Override** — replace the file with the device content.
 - **Append** — keep existing entries and add new ones from the device (deduplicated by MAC / port+protocol / rule name).
-When exporting to a new directory, `export` also generates a `configuration.yaml`
-with the target block and `!include` references for each exported section.
+When importing to a new directory, `import` also generates a `configuration.yaml`
+with the target block and `!include` references for each imported section.
 
 ```bash
 # Bootstrap a new config dir from a live device
-routerless export --target bbox ../new-site
+routerless import --target bbox ../new-site
 # → creates new-site/dhcp.yaml, nat.yaml, firewall.yaml, configuration.yaml
 ```
 
@@ -415,7 +415,7 @@ ruff check .
 pytest
 
 # Run a specific test file
-pytest tests/test_export.py -v
+pytest tests/test_import.py -v
 pytest tests/test_bbox.py -v
 ```
 

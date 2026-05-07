@@ -780,7 +780,7 @@ def cmd_wifi_off(config: str, target: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# export helpers  (pure functions — testable without CLI)
+# import helpers  (pure functions — testable without CLI)
 # ---------------------------------------------------------------------------
 
 _SECTION_FILENAME: dict[str, str] = {
@@ -826,26 +826,26 @@ def _merge_section(sec: str, existing: dict, device: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# export
+# import
 # ---------------------------------------------------------------------------
 
-@cli.command("export")
+@cli.command("import")
 @click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 @click.option(
     "--section", "-s",
     multiple=True,
     type=_SECTION_CHOICES,
-    help="Section(s) to export. Defaults to all.",
+    help="Section(s) to import. Defaults to all.",
 )
 @click.option(
     "--output-dir", "-o",
     default=".",
     type=click.Path(file_okay=False),
-    help="Directory to write exported files into. Defaults to current directory.",
+    help="Directory to write imported files into. Defaults to config directory.",
 )
-def cmd_export(config: str, target: str, section: tuple[str, ...], output_dir: str) -> None:
-    """Export current device configuration to YAML files.
+def cmd_import(config: str, target: str, section: tuple[str, ...], output_dir: str) -> None:
+    """Import current device configuration to YAML files.
 
     Reads the live configuration from TARGET and writes section files
     (dhcp.yaml, nat.yaml, firewall.yaml) into OUTPUT_DIR.
@@ -860,9 +860,9 @@ def cmd_export(config: str, target: str, section: tuple[str, ...], output_dir: s
 
     \b
     Examples:
-      routerless export --target bbox
-      routerless export --target bbox --section nat ../my-network-export
-      routerless export --target bbox --output-dir ./exported
+      routerless import --target bbox
+      routerless import --target bbox --section nat ../my-network-import
+      routerless import --target bbox --output-dir ./imported
     """
     import difflib
 
@@ -875,6 +875,11 @@ def cmd_export(config: str, target: str, section: tuple[str, ...], output_dir: s
         if Path(fallback).exists():
             output_dir = config
             config = "."
+
+    # Default output_dir to the config's parent directory when the user passed
+    # a config path but did not explicitly specify --output-dir.
+    if output_dir == ".":
+        output_dir = str(Path(_resolve_config(config)).parent)
 
     cfg = _load(config)
     adapter = _get_adapter(cfg, target)

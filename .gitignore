@@ -4,7 +4,9 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.ruff_cache/
 dist/
 *.egg-info/
 .venv/
 .my-network
+_patch_tests.py

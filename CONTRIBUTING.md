@@ -73,11 +73,11 @@ All device I/O must be mocked — **never make real network calls in tests**.
 | `tests/test_bbox.py` | Bbox Ultim adapter — HTTP mocked via `unittest.mock` |
 | `tests/test_openwrt.py` | OpenWrt adapter — SSH mocked |
 | `tests/test_plan.py` | `plan` helpers and CLI integration |
-| `tests/test_export.py` | `export` helpers and CLI integration |
+| `tests/test_import.py` | `import` helpers and CLI integration |
 | `tests/test_init.py` | `init` command |
 
 CLI tests use `click.testing.CliRunner` with `_load` and `_get_adapter` patched.
-See `tests/test_export.py` for a complete pattern to follow.
+See `tests/test_import.py` for a complete pattern to follow.
 
 Run the full suite before opening a PR:
 
@@ -92,7 +92,7 @@ pytest --tb=short -q
 Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-feat: add export command
+feat: add import command
 fix: resolve config path for non-existent directories
 test: add stale redirect deletion tests for OpenWrt
 docs: update README with contributing guide
