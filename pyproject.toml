@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "routerless"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Router-agnostic network configuration manager"
 readme = "README.md"
 license = "MIT"
@@ -16,6 +16,7 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.13",
     "Topic :: System :: Networking",
 ]
@@ -25,16 +26,18 @@ dependencies = [
     "paramiko>=3.0",
     "httpx>=0.27",
     "pyyaml>=6.0",
-    "python-dotenv>=1.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/you/routerless"
-Repository = "https://github.com/you/routerless"
-Issues = "https://github.com/you/routerless/issues"
+Homepage = "https://github.com/grogui42/routerless"
+Repository = "https://github.com/grogui42/routerless"
+Issues = "https://github.com/grogui42/routerless/issues"
 
 [project.scripts]
 routerless = "routerless.cli:cli"
+
+[tool.hatch.version]
+path = "routerless/version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["routerless"]
@@ -42,8 +45,6 @@ packages = ["routerless"]
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.23",
-    "pytest-mock>=3.0",
     "pip-audit>=2.7",
     "build>=1.0",
     "ruff>=0.11",
