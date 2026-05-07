@@ -1,5 +1,9 @@
 # routerless
 
+[![CI](https://github.com/you/routerless/actions/workflows/ci.yml/badge.svg)](https://github.com/you/routerless/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/routerless)](https://pypi.org/project/routerless/)
+[![Python 3.13+](https://img.shields.io/pypi/pyversions/routerless)](https://pypi.org/project/routerless/)
+
 > Infrastructure-as-Code for your home network.
 
 Declare DHCP reservations, port forwards, and firewall rules in YAML — `plan` to preview changes, `apply` to sync them to your router. Supports Bbox Ultim, OpenWrt, and QNAP Qhora out of the box.
@@ -30,6 +34,10 @@ Plan: 3 to add, 1 to change.
 **Requirements:** Python 3.13+
 
 ```bash
+# Install from PyPI
+pip install routerless
+
+# Or install from source (for development)
 git clone https://github.com/you/routerless
 cd routerless
 pip install -e ".[dev]"
