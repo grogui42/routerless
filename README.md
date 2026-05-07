@@ -6,7 +6,7 @@
 
 > Infrastructure-as-Code for your home network.
 
-Declare DHCP reservations, port forwards, and firewall rules in YAML — `plan` to preview changes, `apply` to sync them to your router. Supports Bbox Ultim, OpenWrt, and QNAP Qhora out of the box.
+Declare DHCP reservations, port forwards, and firewall rules in YAML — `plan` to preview changes, `apply` to sync them to your router. Supports Bbox Ultim, Freebox, OpenWrt, and QNAP Qhora out of the box.
 
 Like Terraform, but for your home network:
 
@@ -26,6 +26,7 @@ Plan: 3 to add, 1 to change.
 | Type | Authentication | Protocol |
 |------|---------------|----------|
 | **Bbox Ultim** (`bbox_ultim`) | Cookie (password) | HTTPS REST |
+| **Freebox** (`freebox`) | HMAC-SHA1 (app_token) | HTTPS REST |
 | **OpenWrt** (`openwrt`) | SSH key or password | SSH + UCI |
 | **QNAP Qhora 301W** (`qnap_qhora`) | SSH password | SSH + UCI |
 
@@ -281,6 +282,11 @@ targets:
     host: !secret bbox_host
     password: !secret bbox_password
 
+  freebox:
+    type: freebox
+    host: !secret freebox_host
+    password: !secret freebox_app_token
+
   openwrt:
     type: openwrt
     host: !secret openwrt_host
@@ -305,7 +311,8 @@ firewall: !include firewall.yaml
 ```yaml
 bbox_host: 192.168.1.254
 bbox_password: your_password
-
+freebox_host: 192.168.1.254
+freebox_app_token: your_freebox_app_token
 openwrt_host: 192.168.1.1
 openwrt_ssh_key: ~/.ssh/id_ed25519
 
@@ -385,6 +392,7 @@ routerless/
 └── adapters/
     ├── base.py             # BaseAdapter ABC
     ├── bbox_ultim.py       # Bbox Ultim — HTTPS REST
+    ├── freebox_router.py   # Freebox — HTTPS REST
     ├── openwrt.py          # OpenWrt — SSH + UCI
     └── qnap_qhora.py       # QNAP Qhora — delegates to OpenWrtAdapter
 config/
@@ -452,6 +460,18 @@ Or follow these steps manually:
   The adapter sends `hostname = lease.hostname or lease.name` (DNS-safe, no spaces) to
   the Bbox API. The friendly `name` is sent as `device` (write-only, not returned by GET).
   `plan` and `apply` both compare on `hostname` to avoid phantom changes.
+
+### Freebox
+
+- Auth is **HMAC-SHA1 challenge-response** using an app_token stored in `config.password`.
+  1. `GET /login/` → fetch a challenge
+  2. Compute `password = hmac-sha1(app_token, challenge)`
+  3. `POST /login/session/` → receive session_token
+  4. Include `X-Fbx-App-Auth: {session_token}` in all subsequent requests
+- Base URL: `https://mafreebox.freebox.fr/api/v4`
+- Protocol mapping: `Protocol.BOTH` → `"tcp_udp"` (vs Bbox's `"all"`)
+- **Firewall:** Not available in official Freebox OS API — `apply_firewall()` raises `NotImplementedError`
+- **Status/Devices/WiFi:** Not yet implemented — raises `NotImplementedError`
 
 ### OpenWrt / QNAP Qhora
 

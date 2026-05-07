@@ -20,7 +20,8 @@ Use this prompt to add a new capability to routerless — a new command, a new o
 ```
 CLI command (cli.py)
   └── adapter.new_method()          ← defined in BaseAdapter (raises NotImplementedError)
-        ├── BboxUltimAdapter        ← implements via HTTPS REST
+        ├── BboxUltimAdapter        ← implements via HTTPS REST (cookie auth)
+        ├── FreeboxRouterAdapter    ← implements via HTTPS REST (HMAC-SHA1 auth)
         ├── OpenWrtAdapter          ← implements via SSH + UCI / shell commands
         └── QnapQhoraAdapter        ← delegates to self._openwrt.new_method()
 ```
@@ -58,7 +59,7 @@ Import `MyFeatureResult` at the top of `base.py` alongside `AdapterStatus` etc.
 
 ### 3. Implement in each adapter
 
-**BboxUltimAdapter** (`bbox_ultim.py`) — REST pattern:
+**BboxUltimAdapter** (`bbox_ultim.py`) — HTTPS REST (cookie auth):
 ```python
 def my_feature(self, param: str) -> MyFeatureResult:
     with self._make_client() as client:
@@ -70,7 +71,19 @@ def my_feature(self, param: str) -> MyFeatureResult:
     # parse data → return MyFeatureResult(...)
 ```
 
-**OpenWrtAdapter** (`openwrt.py`) — SSH pattern:
+**FreeboxRouterAdapter** (`freebox_router.py`) — HTTPS REST (HMAC-SHA1 auth):
+```python
+def my_feature(self, param: str) -> MyFeatureResult:
+    with self._make_client() as client:
+        self._login(client)
+        try:
+            data = self._get(client, "/some/endpoint")
+        finally:
+            self._logout(client)
+    # parse data → return MyFeatureResult(...)
+```
+
+**OpenWrtAdapter** (`openwrt.py`) — SSH + UCI:
 ```python
 def my_feature(self, param: str) -> MyFeatureResult:
     with self._ssh() as client:
@@ -78,7 +91,7 @@ def my_feature(self, param: str) -> MyFeatureResult:
     # parse out → return MyFeatureResult(...)
 ```
 
-**QnapQhoraAdapter** (`qnap_qhora.py`) — delegate:
+**QnapQhoraAdapter** (`qnap_qhora.py`) — delegate to OpenWrt:
 ```python
 def my_feature(self, param: str) -> MyFeatureResult:
     self._assert_uci_available()
@@ -114,6 +127,19 @@ class TestMyFeature:
         adapter = _adapter()
         mock_client = MagicMock()
         mock_client.get.return_value = _bbox_resp([{"section": {"key": "value"}}])
+        p_make, p_login, p_logout = _mock_http(adapter, mock_client)
+        with p_make, p_login, p_logout:
+            result = adapter.my_feature("param")
+        assert result.field_a == "value"
+```
+
+**For Freebox** (`tests/test_freebox.py`) — mock HTTP (similar to Bbox pattern):
+```python
+class TestMyFeature:
+    def test_returns_result(self) -> None:
+        adapter = _adapter()
+        mock_client = MagicMock()
+        mock_client.get.return_value = _fb_resp(result={"key": "value"})
         p_make, p_login, p_logout = _mock_http(adapter, mock_client)
         with p_make, p_login, p_logout:
             result = adapter.my_feature("param")
