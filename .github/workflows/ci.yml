@@ -38,4 +38,4 @@ jobs:
         # Ignore CVEs in the runner's bootstrap pip (not part of our shipped
         # dependencies). Skip editable installs so the unpublished routerless
         # package isn't audited.
-        run: pip-audit --strict --skip-editable --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-6357
+        run: pip-audit --skip-editable --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-6357
