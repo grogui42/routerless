@@ -15,6 +15,7 @@ class TargetType(str, Enum):
     BBOX_ULTIM = "bbox_ultim"
     OPENWRT = "openwrt"
     QNAP_QHORA = "qnap_qhora"
+    FREEBOX = "freebox"
 
 
 class Protocol(str, Enum):
@@ -52,8 +53,8 @@ class TargetConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_credentials(self) -> "TargetConfig":
-        if self.type == TargetType.BBOX_ULTIM and self.password is None:
-            raise ValueError("bbox_ultim target requires 'password'")
+        if self.type in (TargetType.BBOX_ULTIM, TargetType.FREEBOX) and self.password is None:
+            raise ValueError(f"{self.type.value} target requires 'password'")
         if self.type in (TargetType.OPENWRT, TargetType.QNAP_QHORA):
             if self.ssh_user is None:
                 raise ValueError(f"{self.type.value} target requires 'ssh_user'")

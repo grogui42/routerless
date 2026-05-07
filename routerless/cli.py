@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from routerless.adapters.base import BaseAdapter
 from routerless.adapters.bbox_ultim import BboxUltimAdapter
+from routerless.adapters.freebox_router import FreeboxRouterAdapter
 from routerless.adapters.openwrt import OpenWrtAdapter
 from routerless.adapters.qnap_qhora import QnapQhoraAdapter
 from routerless.models.config import NetworkConfig, TargetType, parse_config
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
 _ADAPTER_MAP: dict[TargetType, type[BaseAdapter]] = {
     TargetType.BBOX_ULTIM: BboxUltimAdapter,
+    TargetType.FREEBOX: FreeboxRouterAdapter,
     TargetType.OPENWRT: OpenWrtAdapter,
     TargetType.QNAP_QHORA: QnapQhoraAdapter,
 }

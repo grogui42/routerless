@@ -9,6 +9,11 @@ targets:
     host: !secret bbox_host
     password: !secret bbox_password
 
+  freebox:
+    type: freebox
+    host: !secret freebox_host
+    password: !secret freebox_app_token
+
   openwrt:
     type: openwrt
     host: !secret openwrt_host
