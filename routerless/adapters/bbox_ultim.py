@@ -20,20 +20,24 @@ DHCP static reservations — source: gist malys/85e5a2276210bea3ebb770bc71d7289a
                     &macaddress=<mac>&hostname=<hostname>
   DELETE /api/v1/dhcp/clients/<id>?btoken=<token>
 
-NAT / port-forwarding — source: lafibre.info user "cruchot" (Nov 2021)
+NAT / port-forwarding — source: lafibre.info user "cruchot" (Nov 2021), field names confirmed 2025-05-05
   GET    /api/v1/nat/rules
+    response: [{"nat": {"enable": 1, "rules": [{...}, ...]}}]
+    rule fields: id, enable, description, externalport, internalport, internalip, protocol, externalip
+    protocol values: "tcp", "udp", "all" (not "tcpudp")
   POST   /api/v1/nat/rules?btoken=<token>
-         form body: description=<name>&enable=1&ipprotocol=<tcp|udp|tcpudp>
-                    &ipaddress=<internal_ip>&external_port=<n>&internal_port=<n>
+         form body: description=<name>&enable=1&protocol=<tcp|udp|all>
+                    &internalip=<ip>&externalport=<n>&internalport=<n>
   DELETE /api/v1/nat/rules/<id>?btoken=<token>
 
-Firewall rules — NOT FOUND in any public source (2025-05-04).
-  Best guesses based on API pattern (unconfirmed):
-    GET    /api/v1/firewall/rules
-    POST   /api/v1/firewall/rules?btoken=<token>
-    DELETE /api/v1/firewall/rules/<id>
-  To discover: open http://bbox.lan → DevTools → Network (XHR) → add a
-  firewall rule → copy request URL, method, and body.
+Firewall rules — GET confirmed (2025-05-05), POST/DELETE not yet captured.
+  GET    /api/v1/firewall/rules
+    response shape: [{"firewall": {"rules": {"list": [...], "number": N}}}]
+    rule fields: id, description, direction, src, dest, action
+  POST   /api/v1/firewall/rules?btoken=<token>   (not yet captured)
+  DELETE /api/v1/firewall/rules/<id>?btoken=<token>  (not yet captured)
+  To discover POST/DELETE: open http://bbox.lan → DevTools → Network (XHR) → add/delete a
+  firewall rule → copy request URL, method and body.
 
 RESPONSE FORMAT (typical Bbox API nesting)
 ------------------------------------------
@@ -102,8 +106,8 @@ class BboxUltimAdapter(BaseAdapter):
     TARGET_TYPE = TargetType.BBOX_ULTIM
 
     # Protocol value sent in NAT form body ("tcpudp" for both)
-    _PROTO_TO_BBOX = {Protocol.TCP: "tcp", Protocol.UDP: "udp", Protocol.BOTH: "tcpudp"}
-    _BBOX_TO_PROTO = {"tcp": Protocol.TCP, "udp": Protocol.UDP, "tcpudp": Protocol.BOTH}
+    _PROTO_TO_BBOX = {Protocol.TCP: "tcp", Protocol.UDP: "udp", Protocol.BOTH: "all"}
+    _BBOX_TO_PROTO = {"tcp": Protocol.TCP, "udp": Protocol.UDP, "all": Protocol.BOTH}
 
     # ------------------------------------------------------------------
     # HTTP session management
@@ -332,16 +336,23 @@ class BboxUltimAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     def _list_nat_rules(self, client: httpx.Client) -> list[dict[str, Any]]:
-        return self._extract_list(self._get(client, "/nat/rules"), "nat", "rules")
+        data = self._get(client, "/nat/rules")
+        # Real Bbox response: [{"nat": {"enable": 1, "rules": [...]}}]
+        # rules is a direct list, not {"list": [...], "number": N}
+        if not isinstance(data, list) or not data:
+            return []
+        nat = data[0].get("nat", {})
+        rules = nat.get("rules", [])
+        return rules if isinstance(rules, list) else []
 
     def _create_nat_rule(self, client: httpx.Client, pf: PortForward) -> None:
         self._post(client, "/nat/rules", {
             "description": pf.name,
             "enable": "1",
-            "ipprotocol": self._PROTO_TO_BBOX.get(pf.protocol, pf.protocol.value),
-            "ipaddress": pf.internal_ip,
-            "external_port": str(pf.external_port),
-            "internal_port": str(pf.internal_port),
+            "protocol": self._PROTO_TO_BBOX.get(pf.protocol, pf.protocol.value),
+            "internalip": pf.internal_ip,
+            "externalport": str(pf.external_port),
+            "internalport": str(pf.internal_port),
         })
 
     def _delete_nat_rule(self, client: httpx.Client, rule_id: int | str) -> None:
@@ -362,7 +373,7 @@ class BboxUltimAdapter(BaseAdapter):
                     return f"{ext_port}/{proto}"
 
                 existing_by_key: dict[str, dict[str, Any]] = {
-                    _key(r.get("external_port", 0), r.get("ipprotocol", "tcp")): r
+                    _key(r.get("externalport", 0), r.get("protocol", "tcp")): r
                     for r in existing
                     if r.get("id") is not None
                 }
@@ -377,9 +388,9 @@ class BboxUltimAdapter(BaseAdapter):
                     existing_rule = existing_by_key.get(key)
                     if existing_rule:
                         if (
-                            pf.internal_ip != existing_rule.get("ipaddress", "")
-                            or pf.internal_port != int(existing_rule.get("internal_port", 0))
-                            or pf.name != existing_rule.get("description", "")
+                            pf.internal_ip != existing_rule.get("internalip", "")
+                            or pf.internal_port != int(existing_rule.get("internalport", 0))
+                            or pf.name != str(existing_rule.get("description", ""))
                         ):
                             self._delete_nat_rule(client, existing_rule["id"])
                             self._create_nat_rule(client, pf)
@@ -407,7 +418,13 @@ class BboxUltimAdapter(BaseAdapter):
     # ------------------------------------------------------------------
 
     def dump(self) -> NetworkConfig:
-        """Read current DHCP static leases and NAT rules from the Bbox."""
+        """Read current DHCP static leases, NAT rules and firewall rules from the Bbox.
+
+        The firewall endpoint is not publicly documented; it is probed at
+        GET /firewall/rules using the same nesting pattern as the other
+        endpoints.  Any HTTP error (404 or otherwise) is treated as
+        "endpoint not available" and firewall is returned as None.
+        """
         with self._make_client() as client:
             self._login(client)
             try:
@@ -420,6 +437,12 @@ class BboxUltimAdapter(BaseAdapter):
                     nat_rules_raw = self._list_nat_rules(client)
                 except httpx.HTTPError:
                     nat_rules_raw = []
+                try:
+                    fw_rules_raw = self._extract_list(
+                        self._get(client, "/firewall/rules"), "firewall", "rules"
+                    )
+                except httpx.HTTPError:
+                    fw_rules_raw = []
             finally:
                 self._logout(client)
 
@@ -446,22 +469,42 @@ class BboxUltimAdapter(BaseAdapter):
 
         port_forwards: list[PortForward] = []
         for i, rule in enumerate(nat_rules_raw):
-            ext_port = rule.get("external_port")
-            int_port = rule.get("internal_port")
-            int_ip = rule.get("ipaddress")
+            ext_port = rule.get("externalport")
+            int_port = rule.get("internalport")
+            int_ip = rule.get("internalip")
             if not (ext_port and int_port and int_ip):
                 continue
-            raw_proto = str(rule.get("ipprotocol", "tcp")).lower()
+            raw_proto = str(rule.get("protocol", "tcp")).lower()
             protocol = self._BBOX_TO_PROTO.get(raw_proto, Protocol.TCP)
             port_forwards.append(PortForward(
-                name=rule.get("description") or f"nat_rule_{rule.get('id', i)}",
+                name=str(rule.get("description") or f"nat_rule_{rule.get('id', i)}"),
                 protocol=protocol,
                 external_port=int(ext_port),
                 internal_ip=int_ip,
                 internal_port=int(int_port),
             ))
 
-        from routerless.models.config import DHCPConfig, NATConfig
+        from routerless.models.config import DHCPConfig, FirewallAction, FirewallConfig, FirewallDirection, FirewallRule, NATConfig
+
+        firewall_rules: list[FirewallRule] = []
+        for rule in fw_rules_raw:
+            name = rule.get("description") or rule.get("name") or f"fw_rule_{rule.get('id', '?')}"
+            try:
+                direction = FirewallDirection(str(rule.get("direction", "forward")).lower())
+            except ValueError:
+                direction = FirewallDirection.FORWARD
+            try:
+                action = FirewallAction(str(rule.get("action", "DROP")).upper())
+            except ValueError:
+                action = FirewallAction.DROP
+            firewall_rules.append(FirewallRule(
+                name=name,
+                direction=direction,
+                src=rule.get("src") or None,
+                dest=rule.get("dest") or None,
+                action=action,
+            ))
+
         return NetworkConfig(
             dhcp=DHCPConfig(
                 subnet="0.0.0.0/0",
@@ -469,6 +512,7 @@ class BboxUltimAdapter(BaseAdapter):
                 static_leases=leases,
             ) if leases else None,
             nat=NATConfig(port_forwards=port_forwards) if port_forwards else None,
+            firewall=FirewallConfig(rules=firewall_rules) if firewall_rules else None,
         )
 
     # ------------------------------------------------------------------

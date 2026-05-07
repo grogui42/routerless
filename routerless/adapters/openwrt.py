@@ -135,15 +135,25 @@ class OpenWrtAdapter(BaseAdapter):
 
     def apply_nat(self, config: NATConfig) -> None:
         with self._ssh() as client:
-            existing_names = self._get_existing_redirect_names(client)
+            existing = self._get_existing_redirects(client)  # {name: idx}
+            desired_names = {pf.name for pf in config.port_forwards}
             changed = False
 
+            # Delete stale entries - highest index first to avoid index shift
+            stale_indices = sorted(
+                [idx for name, idx in existing.items() if name not in desired_names],
+                reverse=True,
+            )
+            for idx in stale_indices:
+                self._run(client, f"uci delete firewall.@redirect[{idx}]")
+                changed = True
+            if stale_indices:
+                existing = self._get_existing_redirects(client)
+
             for pf in config.port_forwards:
-                if pf.name in existing_names:
-                    idx = self._find_redirect_index(client, pf.name)
-                    if idx is not None:
-                        self._apply_redirect_at(client, idx, pf)
-                        changed = True
+                if pf.name in existing:
+                    self._apply_redirect_at(client, existing[pf.name], pf)
+                    changed = True
                 else:
                     self._run(client, "uci add firewall redirect")
                     self._run(client, f"uci set firewall.@redirect[-1].name='{pf.name}'")
@@ -161,29 +171,17 @@ class OpenWrtAdapter(BaseAdapter):
                 self._run(client, "uci commit firewall")
                 self._run(client, "/etc/init.d/firewall restart")
 
-    def _get_existing_redirect_names(self, client: paramiko.SSHClient) -> set[str]:
+    def _get_existing_redirects(self, client: paramiko.SSHClient) -> dict[str, int]:
+        """Return {name: uci_index} for all existing firewall redirects."""
         try:
             out = self._run(client, "uci show firewall | grep '@redirect.*\\.name='")
         except RuntimeError:
-            return set()
-        names: set[str] = set()
-        for line in out.splitlines():
-            if m := re.search(r"\.name='([^']+)'", line):
-                names.add(m.group(1))
-        return names
-
-    def _find_redirect_index(
-        self, client: paramiko.SSHClient, name: str
-    ) -> int | None:
-        try:
-            out = self._run(client, "uci show firewall | grep '@redirect.*\\.name='")
-        except RuntimeError:
-            return None
+            return {}
+        result: dict[str, int] = {}
         for line in out.splitlines():
             if m := re.search(r"@redirect\[(\d+)\]\.name='([^']+)'", line):
-                if m.group(2) == name:
-                    return int(m.group(1))
-        return None
+                result[m.group(2)] = int(m.group(1))
+        return result
 
     def _apply_redirect_at(
         self, client: paramiko.SSHClient, idx: int, pf: PortForward
@@ -200,15 +198,25 @@ class OpenWrtAdapter(BaseAdapter):
 
     def apply_firewall(self, config: FirewallConfig) -> None:
         with self._ssh() as client:
-            existing_names = self._get_existing_rule_names(client)
+            existing = self._get_existing_rules(client)  # {name: idx}
+            desired_names = {rule.name for rule in config.rules}
             changed = False
 
+            # Delete stale entries - highest index first to avoid index shift
+            stale_indices = sorted(
+                [idx for name, idx in existing.items() if name not in desired_names],
+                reverse=True,
+            )
+            for idx in stale_indices:
+                self._run(client, f"uci delete firewall.@rule[{idx}]")
+                changed = True
+            if stale_indices:
+                existing = self._get_existing_rules(client)
+
             for rule in config.rules:
-                if rule.name in existing_names:
-                    idx = self._find_rule_index(client, rule.name)
-                    if idx is not None:
-                        self._apply_rule_at(client, idx, rule)
-                        changed = True
+                if rule.name in existing:
+                    self._apply_rule_at(client, existing[rule.name], rule)
+                    changed = True
                 else:
                     self._run(client, "uci add firewall rule")
                     self._run(client, f"uci set firewall.@rule[-1].name='{rule.name}'")
@@ -219,35 +227,23 @@ class OpenWrtAdapter(BaseAdapter):
                 self._run(client, "uci commit firewall")
                 self._run(client, "/etc/init.d/firewall restart")
 
-    def _get_existing_rule_names(self, client: paramiko.SSHClient) -> set[str]:
+    def _get_existing_rules(self, client: paramiko.SSHClient) -> dict[str, int]:
+        """Return {name: uci_index} for all existing firewall rules."""
         try:
             out = self._run(client, "uci show firewall | grep '@rule.*\\.name='")
         except RuntimeError:
-            return set()
-        names: set[str] = set()
-        for line in out.splitlines():
-            if m := re.search(r"\.name='([^']+)'", line):
-                names.add(m.group(1))
-        return names
-
-    def _find_rule_index(
-        self, client: paramiko.SSHClient, name: str
-    ) -> int | None:
-        try:
-            out = self._run(client, "uci show firewall | grep '@rule.*\\.name='")
-        except RuntimeError:
-            return None
+            return {}
+        result: dict[str, int] = {}
         for line in out.splitlines():
             if m := re.search(r"@rule\[(\d+)\]\.name='([^']+)'", line):
-                if m.group(2) == name:
-                    return int(m.group(1))
-        return None
+                result[m.group(2)] = int(m.group(1))
+        return result
 
     def _apply_rule_at(
         self, client: paramiko.SSHClient, idx: int, rule: FirewallRule
     ) -> None:
         ref = f"firewall.@rule[{idx}]"
-        self._run(client, f"uci set {ref}.direction='{rule.direction.value}'")
+        # OpenWrt UCI uses src/dest zone names for directionality, not a direction field
         target_map = {
             FirewallAction.ACCEPT: "ACCEPT",
             FirewallAction.DROP: "DROP",

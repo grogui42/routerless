@@ -26,7 +26,7 @@ routerless/
   models/config.py   # Pydantic v2 models: NetworkConfig, DHCPConfig, NATConfig, FirewallConfig
   adapters/
     base.py          # BaseAdapter ABC — defines the contract
-    bbox_ultim.py    # Bbox Ultim via HTTPS REST (cookie auth, no btoken)
+    bbox_ultim.py    # Bbox Ultim via HTTPS REST (cookie auth + btoken CSRF)
     openwrt.py       # OpenWrt via SSH + UCI commands
     qnap_qhora.py    # QNAP Qhora 301W — delegates to OpenWrtAdapter
 config/
@@ -62,17 +62,28 @@ Adapter registry is in `cli.py → _ADAPTER_MAP`. Adding a new adapter requires:
 
 ## Bbox Ultim Adapter — Critical Notes
 
-- **Auth:** Cookie-based only. `POST /login` with `password` + `remember=1` and `Referer`/`Origin` headers. No btoken needed.
+- **Auth:** Cookie-based. `POST /login` with `password` + `remember=1` and `Referer`/`Origin` headers.
+  After login, `GET /device/token` returns a CSRF **btoken** stored as `self._btoken`.
+  Every mutating request appends `?btoken=<token>` to the URL.
 - **Base URL:** `https://mabbox.bytel.fr/api/v1` — the router redirects its local HTTP to this cloud relay.
 - **Endpoints confirmed (reverse-engineered):**
   - `GET/POST/DELETE /dhcp/clients` — static DHCP reservations
+  - `PUT /dhcp/clients/<id>` — update existing reservation in-place (avoids IP conflict vs delete+create)
+  - `PUT /dhcp` — update dynamic pool range; fields: `dhcp.minaddress`, `dhcp.maxaddress`, `dhcp.leasetime`
   - `GET/POST/DELETE /nat/rules` — port-forward rules
+  - `GET /firewall/rules` — firewall rules (**GET confirmed**; POST/DELETE not yet captured)
   - `GET /wan/ip`, `/lan/ip`, `/device`, `/wireless`, `/voip`, `/hosts` — read-only status
   - `PUT /wireless` with `radio.enable=1|0` — WiFi on/off
 - **Response shape:** `[{"<section>": {"<subsection>": {"list": [...]}}}]` — use `_extract_list(data, *keys)`.
 - **Rate limit:** 3 failed logins → 300 s (or 1200 s) lockout. Don't iterate passwords.
-- **Firewall:** No public or community-confirmed endpoints. `apply_firewall()` raises `NotImplementedError`.
-- **Protocol mapping:** `Protocol.BOTH` → `"tcpudp"` in NAT form body.
+- **Firewall:** `GET /firewall/rules` is confirmed working (returns live rules with `description`, `direction`, `src`, `dest`, `action` fields). `POST`/`DELETE` endpoints not yet captured — use mitmproxy to discover (see `.github/prompts/discover-bbox-interface.prompt.md`). `apply_firewall()` raises `NotImplementedError` until then.
+- **Protocol mapping:** `Protocol.BOTH` → `"all"` in NAT form body (not `"tcpudp"` — confirmed from GET response).
+- **DHCP hostname vs name:**
+  - `StaticLease.name` — friendly label (spaces allowed). Sent as `device` in POST/PUT (write-only, **not returned by GET**).
+  - `StaticLease.hostname` — DNS-safe identifier (no spaces). Sent as `hostname` in POST/PUT and **returned by GET**.
+  - `apply_dhcp` compares `lease.hostname or lease.name` against `existing["hostname"]` to decide create/update/skip.
+  - `_plan_dhcp` compares `lease.hostname or lease.name` against `d.hostname or d.name`; reports `hostname: 'old' → 'new'`.
+  - A `hostname` with spaces causes Bbox to return 400 "Invalid parameter" — always use `lease.hostname or lease.name`.
 
 ## OpenWrt / QNAP Qhora Adapter
 

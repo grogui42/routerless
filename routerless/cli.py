@@ -31,7 +31,22 @@ _SECTION_CHOICES = click.Choice(["dhcp", "nat", "firewall"])
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _resolve_config(path: str) -> str:
+    """Return the config file path.
+
+    Rules:
+    - Existing directory → <dir>/configuration.yaml
+    - Path with .yaml/.yml extension → use as-is
+    - Anything else (non-existent dir, no extension) → <path>/configuration.yaml
+    """
+    p = Path(path)
+    if p.suffix.lower() in (".yaml", ".yml"):
+        return str(p)
+    return str(p / "configuration.yaml")
+
+
 def _load(config_path: str) -> NetworkConfig:
+    config_path = _resolve_config(config_path)
     try:
         raw = load_config(config_path)
     except FileNotFoundError as exc:
@@ -246,7 +261,7 @@ def cmd_init(directory: str, force: bool) -> None:
 # ---------------------------------------------------------------------------
 
 @cli.command("validate")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 def cmd_validate(config: str) -> None:
     """Validate a configuration file (and all its !include references)."""
     cfg = _load(config)
@@ -265,7 +280,7 @@ def cmd_validate(config: str) -> None:
 # ---------------------------------------------------------------------------
 
 @cli.command("apply")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 @click.option(
     "--section", "-s",
@@ -314,7 +329,7 @@ def cmd_apply(config: str, target: str, section: tuple[str, ...]) -> None:
 # ---------------------------------------------------------------------------
 
 @cli.command("dump")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 @click.option(
     "--output", "-o",
@@ -327,7 +342,7 @@ def cmd_dump(config: str, target: str, output: str | None) -> None:
     cfg = _load(config)
     adapter = _get_adapter(cfg, target)
     dumped = adapter.dump()
-    raw = dumped.model_dump(exclude_none=True, exclude_unset=True)
+    raw = dumped.model_dump(mode="json", exclude_none=True, exclude_unset=True)
     out = yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False)
     if output:
         Path(output).write_text(out, encoding="utf-8")
@@ -341,7 +356,7 @@ def cmd_dump(config: str, target: str, output: str | None) -> None:
 # ---------------------------------------------------------------------------
 
 @cli.command("diff")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 @click.option(
     "--section", "-s",
@@ -357,9 +372,9 @@ def cmd_diff(config: str, target: str, section: tuple[str, ...]) -> None:
     adapter = _get_adapter(cfg, target)
     sections = _resolve_sections(section)
 
-    local_raw = cfg.model_dump(exclude_none=True, exclude_unset=True)
+    local_raw = cfg.model_dump(mode="json", exclude_none=True, exclude_unset=True)
     device_cfg = adapter.dump()
-    device_raw = device_cfg.model_dump(exclude_none=True, exclude_unset=True)
+    device_raw = device_cfg.model_dump(mode="json", exclude_none=True, exclude_unset=True)
 
     for sec in sections:
         local_sec = local_raw.get(sec)
@@ -496,7 +511,7 @@ _PLAN_COLOR: dict[PlanAction, str] = {
 # ---------------------------------------------------------------------------
 
 @cli.command("plan")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 @click.option(
     "--section", "-s",
@@ -613,7 +628,7 @@ def _fmt_uptime(seconds: int) -> str:
 # ---------------------------------------------------------------------------
 
 @cli.command("status")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 def cmd_status(config: str, target: str) -> None:
     """Show device status (WAN/LAN, WiFi, uptime…)."""
@@ -650,7 +665,7 @@ def cmd_status(config: str, target: str) -> None:
 # ---------------------------------------------------------------------------
 
 @cli.command("devices")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 @click.option("--all", "show_all", is_flag=True, default=False, help="Include inactive devices.")
 def cmd_devices(config: str, target: str, show_all: bool) -> None:
@@ -707,7 +722,7 @@ def grp_wifi() -> None:
 
 
 @grp_wifi.command("status")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 def cmd_wifi_status(config: str, target: str) -> None:
     """Show WiFi radio status (SSID, channel, encryption, device count)."""
@@ -735,7 +750,7 @@ def cmd_wifi_status(config: str, target: str) -> None:
 
 
 @grp_wifi.command("on")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 def cmd_wifi_on(config: str, target: str) -> None:
     """Enable WiFi radios."""
@@ -749,7 +764,7 @@ def cmd_wifi_on(config: str, target: str) -> None:
 
 
 @grp_wifi.command("off")
-@click.argument("config", default="configuration.yaml", type=click.Path(exists=True))
+@click.argument("config", default=".", type=click.Path())
 @click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
 def cmd_wifi_off(config: str, target: str) -> None:
     """Disable WiFi radios."""
@@ -760,3 +775,196 @@ def cmd_wifi_off(config: str, target: str) -> None:
     except NotImplementedError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo("WiFi disabled.")
+
+
+# ---------------------------------------------------------------------------
+# export helpers  (pure functions — testable without CLI)
+# ---------------------------------------------------------------------------
+
+_SECTION_FILENAME: dict[str, str] = {
+    "dhcp":     "dhcp.yaml",
+    "nat":      "nat.yaml",
+    "firewall": "firewall.yaml",
+}
+
+
+def _merge_section(sec: str, existing: dict, device: dict) -> dict:
+    """Return *existing* with new entries from *device* appended (no duplicates)."""
+    if sec == "dhcp":
+        existing_macs = {str(l.get("mac", "")).upper() for l in existing.get("static_leases", [])}
+        new_leases = [
+            l for l in device.get("static_leases", [])
+            if str(l.get("mac", "")).upper() not in existing_macs
+        ]
+        result = dict(existing)
+        result["static_leases"] = list(existing.get("static_leases", [])) + new_leases
+        return result
+    if sec == "nat":
+        existing_keys = {
+            (pf.get("external_port"), pf.get("protocol", "tcp"))
+            for pf in existing.get("port_forwards", [])
+        }
+        new_pfs = [
+            pf for pf in device.get("port_forwards", [])
+            if (pf.get("external_port"), pf.get("protocol", "tcp")) not in existing_keys
+        ]
+        result = dict(existing)
+        result["port_forwards"] = list(existing.get("port_forwards", [])) + new_pfs
+        return result
+    if sec == "firewall":
+        existing_names = {r.get("name") for r in existing.get("rules", [])}
+        new_rules = [
+            r for r in device.get("rules", [])
+            if r.get("name") not in existing_names
+        ]
+        result = dict(existing)
+        result["rules"] = list(existing.get("rules", [])) + new_rules
+        return result
+    return {**existing, **device}
+
+
+# ---------------------------------------------------------------------------
+# export
+# ---------------------------------------------------------------------------
+
+@cli.command("export")
+@click.argument("config", default=".", type=click.Path())
+@click.option("--target", "-t", required=True, help="Target name as defined in configuration.yaml")
+@click.option(
+    "--section", "-s",
+    multiple=True,
+    type=_SECTION_CHOICES,
+    help="Section(s) to export. Defaults to all.",
+)
+@click.option(
+    "--output-dir", "-o",
+    default=".",
+    type=click.Path(file_okay=False),
+    help="Directory to write exported files into. Defaults to current directory.",
+)
+def cmd_export(config: str, target: str, section: tuple[str, ...], output_dir: str) -> None:
+    """Export current device configuration to YAML files.
+
+    Reads the live configuration from TARGET and writes section files
+    (dhcp.yaml, nat.yaml, firewall.yaml) into OUTPUT_DIR.
+
+    If a file already exists, a unified diff is shown and you are prompted
+    to choose: Override, Append (add new entries only), or Skip.
+
+    \b
+    The CONFIG argument is optional. If the resolved path does not contain a
+    configuration file but a configuration.yaml exists in the current directory,
+    the given path is used as the output directory instead.
+
+    \b
+    Examples:
+      routerless export --target bbox
+      routerless export --target bbox --section nat ../my-network-export
+      routerless export --target bbox --output-dir ./exported
+    """
+    import difflib
+
+    # Convenience: if the given config path has no configuration file but looks
+    # like an output directory (no .yaml extension), redirect it to --output-dir
+    # and fall back to the current directory's config.
+    resolved = _resolve_config(config)
+    if not Path(resolved).exists() and output_dir == "." and Path(config).suffix.lower() not in (".yaml", ".yml"):
+        fallback = _resolve_config(".")
+        if Path(fallback).exists():
+            output_dir = config
+            config = "."
+
+    cfg = _load(config)
+    adapter = _get_adapter(cfg, target)
+    sections = _resolve_sections(section)
+
+    try:
+        device_cfg = adapter.dump()
+    except Exception as exc:
+        raise click.ClickException(f"Failed to read device configuration: {exc}") from exc
+
+    out_dir = Path(output_dir)
+    dir_is_new = not out_dir.exists()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    created_sections: list[str] = []
+
+    for sec in sections:
+        device_sec = getattr(device_cfg, sec, None)
+        if device_sec is None:
+            click.echo(click.style(f"  {sec}", bold=True) + ": no data from device — skipped.")
+            continue
+
+        out_path = out_dir / _SECTION_FILENAME[sec]
+        device_data = device_sec.model_dump(mode="json", exclude_none=True, exclude_unset=True)
+        device_yaml = yaml.dump(
+            device_data, default_flow_style=False, allow_unicode=True, sort_keys=False
+        )
+
+        if not out_path.exists():
+            out_path.write_text(device_yaml, encoding="utf-8")
+            click.echo(click.style("  create", fg="green") + f"  {out_path}")
+            created_sections.append(sec)
+            continue
+
+        existing_text = out_path.read_text(encoding="utf-8")
+        if existing_text.strip() == device_yaml.strip():
+            click.echo(click.style(f"  {sec}", bold=True) + f"  {out_path}  " + click.style("✓ no differences", fg="green"))
+            continue
+
+        diff_lines = list(difflib.unified_diff(
+            existing_text.splitlines(keepends=True),
+            device_yaml.splitlines(keepends=True),
+            fromfile=f"{out_path.name} (current)",
+            tofile=f"{out_path.name} (device)",
+        ))
+        click.echo(click.style(f"\nSection: {sec}", bold=True) + f"  file: {out_path}")
+        click.echo("".join(diff_lines))
+
+        action = click.prompt(
+            "Action",
+            type=click.Choice(["o", "a", "s"], case_sensitive=False),
+            default="s",
+            show_choices=False,
+            prompt_suffix=" [o=override / a=append / s=skip] > ",
+        )
+
+        if action.lower() == "s":
+            click.echo("  → skipped.")
+        elif action.lower() == "o":
+            out_path.write_text(device_yaml, encoding="utf-8")
+            click.echo(click.style("  override", fg="yellow") + f"  {out_path}")
+        else:  # "a"
+            existing_data = yaml.safe_load(existing_text) or {}
+            merged = _merge_section(sec, existing_data, device_data)
+            merged_yaml = yaml.dump(
+                merged, default_flow_style=False, allow_unicode=True, sort_keys=False
+            )
+            out_path.write_text(merged_yaml, encoding="utf-8")
+            click.echo(click.style("  append", fg="cyan") + f"  {out_path}")
+
+    # Generate configuration.yaml when writing to a fresh directory
+    cfg_out = out_dir / "configuration.yaml"
+    if created_sections and not cfg_out.exists():
+        target_cfg = cfg.targets[target]
+        includes = "\n".join(
+            f"{sec}:     !include {_SECTION_FILENAME[sec]}"
+            for sec in ["dhcp", "nat", "firewall"]
+            if sec in created_sections
+        )
+        cfg_content = (
+            'version: "1.0"\n\n'
+            "targets:\n"
+            f"  {target}:\n"
+            f"    type: {target_cfg.type.value}\n"
+            f"    host: !secret {target}_host\n"
+        )
+        if target_cfg.type.value == "bbox_ultim":
+            cfg_content += f"    password: !secret {target}_password\n"
+        else:
+            cfg_content += f"    ssh_user: {target_cfg.ssh_user}\n"
+            cfg_content += f"    ssh_key: !secret {target}_ssh_key\n"
+            cfg_content += f"    ssh_port: {target_cfg.ssh_port}\n"
+        cfg_content += f"\n{includes}\n"
+        cfg_out.write_text(cfg_content, encoding="utf-8")
+        click.echo(click.style("  create", fg="green") + f"  {cfg_out}")

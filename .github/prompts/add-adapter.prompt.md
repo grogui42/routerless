@@ -7,6 +7,12 @@ description: "Add a new router adapter (new router brand/model) with full CLI su
 
 Use this prompt to scaffold a complete new adapter for a router brand or model not yet supported.
 
+> **Before writing any code**, read the current versions of:
+> - `routerless/adapters/base.py` — source of truth for abstract methods and optional overrides
+> - `routerless/cli.py` — source of truth for `_ADAPTER_MAP` and which CLI commands exist
+>
+> Use their actual content rather than the examples below, which may lag behind.
+
 ## What you need to provide
 
 - **Router name / brand** (e.g. "FritzBox", "Asus Merlin", "Synology Router")
@@ -46,33 +52,21 @@ from routerless.models.status import AdapterStatus, ConnectedDevice, WifiRadio
 class MyRouterAdapter(BaseAdapter):
     TARGET_TYPE = TargetType.MY_ROUTER
 
-    # ── Apply methods (mandatory) ──────────────────────────────────────
+    # ── Abstract (mandatory) — inspect base.py for current list ─────────
 
-    def apply_dhcp(self, config: DHCPConfig) -> None:
-        ...  # implement or raise NotImplementedError
+    def apply_dhcp(self, config: DHCPConfig) -> None: ...
+    def apply_nat(self, config: NATConfig) -> None: ...
+    def apply_firewall(self, config: FirewallConfig) -> None: ...
+    def dump(self) -> NetworkConfig: ...
 
-    def apply_nat(self, config: NATConfig) -> None:
-        ...
+    # ── Optional overrides (default: raise NotImplementedError) ─────────
+    # Implement only if the router supports the feature.
+    # Inspect base.py for the current list and exact signatures.
 
-    def apply_firewall(self, config: FirewallConfig) -> None:
-        ...
-
-    def dump(self) -> NetworkConfig:
-        ...
-
-    # ── Status / devices / wifi (optional — implement if the router supports it) ──
-
-    def get_status(self) -> AdapterStatus:
-        ...  # or leave as BaseAdapter default (raises NotImplementedError)
-
-    def get_devices(self, only_active: bool = True) -> list[ConnectedDevice]:
-        ...
-
-    def get_wifi(self) -> list[WifiRadio]:
-        ...
-
-    def wifi_enable(self, enable: bool) -> None:
-        ...
+    def get_status(self) -> AdapterStatus: ...
+    def get_devices(self, only_active: bool = True) -> list[ConnectedDevice]: ...
+    def get_wifi(self) -> list[WifiRadio]: ...
+    def wifi_enable(self, enable: bool) -> None: ...
 ```
 
 **Patterns to follow:**
@@ -94,7 +88,12 @@ _ADAPTER_MAP: dict[TargetType, type[BaseAdapter]] = {
 }
 ```
 
-No other CLI changes are needed — all commands (`apply`, `dump`, `diff`, `status`, `devices`, `wifi`) work generically through `BaseAdapter`.
+No other CLI changes are needed. All commands work generically through `BaseAdapter`:
+- `apply`, `dump`, `diff` — available once the 4 abstract methods are implemented
+- `plan` — compares local config against `dump()` output; free for any adapter
+- `status`, `devices`, `wifi` — available if the optional methods are overridden
+
+Verify the full command list in `cli.py` (`@cli.command(...)`) in case new commands were added since this prompt was written.
 
 ### 4. `config/configuration.yaml` — Add a target example
 

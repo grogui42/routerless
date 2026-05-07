@@ -266,7 +266,8 @@ class TestApplyDhcp:
 
 class TestApplyNat:
     def _nat_response(self, rules: list[dict]) -> Any:
-        return [{"nat": {"rules": {"list": rules, "number": len(rules)}}}]
+        # Real Bbox response: rules is a direct list, not {"list": [...], "number": N}
+        return [{"nat": {"enable": 1, "rules": rules}}]
 
     def test_creates_new_rule(self) -> None:
         adapter = _adapter()
@@ -284,9 +285,9 @@ class TestApplyNat:
 
         mock_client.post.assert_called_once()
         data = mock_client.post.call_args[1]["data"]
-        assert data["ipprotocol"] == "tcp"
-        assert data["external_port"] == "8123"
-        assert data["ipaddress"] == "192.168.1.20"
+        assert data["protocol"] == "tcp"
+        assert data["externalport"] == "8123"
+        assert data["internalip"] == "192.168.1.20"
 
     def test_skips_identical_rule(self) -> None:
         adapter = _adapter()
@@ -294,8 +295,8 @@ class TestApplyNat:
             PortForward(name="HA", protocol=Protocol.TCP, external_port=8123,
                         internal_ip="192.168.1.20", internal_port=8123),
         ])
-        existing = [{"id": 1, "description": "HA", "ipprotocol": "tcp",
-                     "external_port": "8123", "ipaddress": "192.168.1.20", "internal_port": "8123"}]
+        existing = [{"id": 1, "description": "HA", "protocol": "tcp",
+                     "externalport": 8123, "internalip": "192.168.1.20", "internalport": 8123}]
         mock_client = MagicMock()
         mock_client.get.return_value = _bbox_resp(self._nat_response(existing))
 
@@ -306,7 +307,7 @@ class TestApplyNat:
         mock_client.post.assert_not_called()
         mock_client.delete.assert_not_called()
 
-    def test_both_protocol_maps_to_tcpudp(self) -> None:
+    def test_both_protocol_maps_to_all(self) -> None:
         adapter = _adapter()
         config = NATConfig(port_forwards=[
             PortForward(name="DNS", protocol=Protocol.BOTH, external_port=53,
@@ -321,13 +322,13 @@ class TestApplyNat:
             adapter.apply_nat(config)
 
         data = mock_client.post.call_args[1]["data"]
-        assert data["ipprotocol"] == "tcpudp"
+        assert data["protocol"] == "all"
 
     def test_removes_stale_rule(self) -> None:
         adapter = _adapter()
         config = NATConfig(port_forwards=[])  # empty desired
-        existing = [{"id": 9, "description": "Old", "ipprotocol": "tcp",
-                     "external_port": "80", "ipaddress": "192.168.1.1", "internal_port": "80"}]
+        existing = [{"id": 9, "description": "Old", "protocol": "tcp",
+                     "externalport": 80, "internalip": "192.168.1.1", "internalport": 80}]
         mock_client = MagicMock()
         mock_client.get.return_value = _bbox_resp(self._nat_response(existing))
         mock_client.delete.return_value = _bbox_resp({})
@@ -363,19 +364,19 @@ class TestDump:
             {"id": 1, "macaddress": "AA:BB:CC:DD:EE:FF",
              "ipaddress": "192.168.1.10", "hostname": "hub"}
         ], "number": 1}}}]
-        nat_resp = [{"nat": {"rules": {"list": [
-            {"id": 2, "description": "HA", "ipprotocol": "tcp",
-             "external_port": "8123", "ipaddress": "192.168.1.20", "internal_port": "8123"}
-        ], "number": 1}}}]
+        nat_resp = [{"nat": {"enable": 1, "rules": [
+            {"id": 2, "description": "HA", "protocol": "tcp",
+             "externalport": 8123, "internalip": "192.168.1.20", "internalport": 8123}
+        ]}}]
         hosts_resp: list = []
 
         mock_client = MagicMock()
-        # dump() calls: GET /hosts, then _list_dhcp_clients (GET /dhcp/clients),
-        # then _list_nat_rules (GET /nat/rules)
+        # dump() calls: /hosts, /dhcp/clients, /nat/rules, /firewall/rules
         mock_client.get.side_effect = [
             _bbox_resp(hosts_resp),   # /hosts
             _bbox_resp(dhcp_resp),    # /dhcp/clients (via _list_dhcp_clients)
             _bbox_resp(nat_resp),     # /nat/rules (via _list_nat_rules)
+            _bbox_resp([]),           # /firewall/rules → empty → firewall=None
         ]
 
         p_make, p_login, p_logout = _mock_http(adapter, mock_client)
@@ -388,6 +389,59 @@ class TestDump:
         assert cfg.nat is not None
         assert len(cfg.nat.port_forwards) == 1
         assert cfg.nat.port_forwards[0].external_port == 8123
+        assert cfg.firewall is None
+
+    def test_dump_with_firewall_rules(self) -> None:
+        adapter = _adapter()
+        fw_resp = [{"firewall": {"rules": {"list": [
+            {"id": 1, "description": "Block IoT", "direction": "forward",
+             "src": "iot", "dest": "wan", "action": "DROP"}
+        ], "number": 1}}}]
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [
+            _bbox_resp([]),     # /hosts
+            _bbox_resp([]),     # /dhcp/clients
+            _bbox_resp([]),     # /nat/rules
+            _bbox_resp(fw_resp),  # /firewall/rules
+        ]
+
+        p_make, p_login, p_logout = _mock_http(adapter, mock_client)
+        with p_make, p_login, p_logout:
+            cfg = adapter.dump()
+
+        assert cfg.firewall is not None
+        assert len(cfg.firewall.rules) == 1
+        rule = cfg.firewall.rules[0]
+        assert rule.name == "Block IoT"
+        assert rule.direction.value == "forward"
+        assert rule.src == "iot"
+        assert rule.dest == "wan"
+        assert rule.action.value == "DROP"
+
+    def test_dump_firewall_404(self) -> None:
+        """If /firewall/rules returns HTTP error, firewall is None."""
+        import httpx as _httpx
+        adapter = _adapter()
+
+        error_resp = MagicMock()
+        error_resp.status_code = 404
+        error_resp.raise_for_status.side_effect = _httpx.HTTPStatusError(
+            "404", request=MagicMock(), response=error_resp
+        )
+
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [
+            _bbox_resp([]),   # /hosts
+            _bbox_resp([]),   # /dhcp/clients
+            _bbox_resp([]),   # /nat/rules
+            error_resp,       # /firewall/rules → 404
+        ]
+
+        p_make, p_login, p_logout = _mock_http(adapter, mock_client)
+        with p_make, p_login, p_logout:
+            cfg = adapter.dump()
+
         assert cfg.firewall is None
 
 
