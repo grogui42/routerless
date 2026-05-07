@@ -1,6 +1,21 @@
 # routerless
 
-Router-agnostic network configuration manager. Write your network config once in YAML, apply it to any supported router.
+> Infrastructure-as-Code for your home network.
+
+Declare DHCP reservations, port forwards, and firewall rules in YAML — `plan` to preview changes, `apply` to sync them to your router. Supports Bbox Ultim, OpenWrt, and QNAP Qhora out of the box.
+
+Like Terraform, but for your home network:
+
+```
+$ routerless plan --target bbox
+Section: dhcp  (+3  ~1)
+  + ADD     lease "NAS"   AA:BB:CC:DD:EE:FF  →  192.168.1.20
+  ~ CHANGE  lease "Pi"    ip: 192.168.1.50 → 192.168.1.51
+
+Section: nat   ✓ no changes
+
+Plan: 3 to add, 1 to change.
+```
 
 ## Supported Routers
 
@@ -382,18 +397,22 @@ tests/                      # pytest — all device I/O mocked
 ## Development
 
 ```bash
-# Run tests
+# Install in editable mode with dev dependencies
+pip install -e ".[dev]"
+
+# Run all tests
 pytest
 
 # Run a specific test file
 pytest tests/test_export.py -v
 pytest tests/test_bbox.py -v
-
-# Install in editable mode with dev dependencies
-pip install -e ".[dev]"
 ```
 
 All tests mock device I/O — no real router needed. Tests must stay green before and after every change.
+
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide covering workflow, code style, test conventions, commit messages, and how to add new adapters or CLI features.
 
 ## Adding a New Adapter
 
@@ -428,3 +447,11 @@ Or follow these steps manually:
 - Uses UCI over SSH (paramiko). Host key policy: `RejectPolicy`.
 - Qhora default SSH port: **22200**. Enable SSH by holding the WPS button for 12 s.
 - `apply_*` methods are idempotent: they read current state before writing.
+
+## License
+
+[MIT](LICENSE) — see the LICENSE file for details.
+
+---
+
+[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
