@@ -19,7 +19,6 @@ from routerless.models.config import (
     PortForward,
     Protocol,
     StaticLease,
-    TargetConfig,
     TargetType,
 )
 from routerless.models.status import AdapterStatus, ConnectedDevice, WifiRadio
@@ -92,7 +91,7 @@ class OpenWrtAdapter(BaseAdapter):
                 self._run(client, f"uci set dhcp.@host[-1].ip='{lease.ip}'")
                 self._run(client, f"uci set dhcp.@host[-1].name='{lease.name}'")
                 if lease.hostname:
-                    self._run(client, f"uci set dhcp.@host[-1].dns='1'")
+                    self._run(client, "uci set dhcp.@host[-1].dns='1'")
 
             # Update changed leases
             for lease in changed_leases:
@@ -157,9 +156,9 @@ class OpenWrtAdapter(BaseAdapter):
                 else:
                     self._run(client, "uci add firewall redirect")
                     self._run(client, f"uci set firewall.@redirect[-1].name='{pf.name}'")
-                    self._run(client, f"uci set firewall.@redirect[-1].target='DNAT'")
-                    self._run(client, f"uci set firewall.@redirect[-1].src='wan'")
-                    self._run(client, f"uci set firewall.@redirect[-1].dest='lan'")
+                    self._run(client, "uci set firewall.@redirect[-1].target='DNAT'")
+                    self._run(client, "uci set firewall.@redirect[-1].src='wan'")
+                    self._run(client, "uci set firewall.@redirect[-1].dest='lan'")
                     proto = "tcp udp" if pf.protocol == Protocol.BOTH else pf.protocol.value
                     self._run(client, f"uci set firewall.@redirect[-1].proto='{proto}'")
                     self._run(client, f"uci set firewall.@redirect[-1].src_dport='{pf.external_port}'")
@@ -277,11 +276,11 @@ class OpenWrtAdapter(BaseAdapter):
         port_forwards = _parse_uci_redirects(firewall_raw)
         fw_rules = _parse_uci_rules(firewall_raw)
 
-        from routerless.models.config import NATConfig, FirewallConfig, DHCPConfig
+        from routerless.models.config import DHCPConfig, FirewallConfig, NATConfig
         return NetworkConfig(
             dhcp=DHCPConfig(
                 subnet="0.0.0.0/0",
-                gateway="0.0.0.0",
+                gateway="0.0.0.0",  # noqa: S104
                 static_leases=leases,
             ) if leases else None,
             nat=NATConfig(port_forwards=port_forwards) if port_forwards else None,

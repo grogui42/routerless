@@ -6,11 +6,6 @@ from pydantic import ValidationError
 
 from routerless.models.config import (
     DHCPConfig,
-    FirewallAction,
-    FirewallConfig,
-    FirewallRule,
-    NATConfig,
-    NetworkConfig,
     PortForward,
     Protocol,
     StaticLease,
@@ -22,12 +17,12 @@ from routerless.models.config import (
 
 class TestStaticLease:
     def test_valid(self) -> None:
-        l = StaticLease(name="Hub", mac="aa:bb:cc:dd:ee:ff", ip="192.168.1.10")
-        assert l.mac == "AA:BB:CC:DD:EE:FF"
+        lease = StaticLease(name="Hub", mac="aa:bb:cc:dd:ee:ff", ip="192.168.1.10")
+        assert lease.mac == "AA:BB:CC:DD:EE:FF"
 
     def test_mac_normalised_dashes(self) -> None:
-        l = StaticLease(name="X", mac="aa-bb-cc-dd-ee-ff", ip="10.0.0.1")
-        assert l.mac == "AA:BB:CC:DD:EE:FF"
+        lease = StaticLease(name="X", mac="aa-bb-cc-dd-ee-ff", ip="10.0.0.1")
+        assert lease.mac == "AA:BB:CC:DD:EE:FF"
 
     def test_invalid_mac(self) -> None:
         with pytest.raises(ValidationError, match="MAC"):

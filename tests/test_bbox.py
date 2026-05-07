@@ -1,13 +1,12 @@
 """Tests for the Bbox Ultim adapter — HTTP is mocked via httpx."""
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from routerless.adapters.bbox_ultim import BboxUltimAdapter, BboxDevice, BboxStatus, BboxWifiRadio
+from routerless.adapters.bbox_ultim import BboxUltimAdapter
 from routerless.models.config import (
     DHCPConfig,
     NATConfig,

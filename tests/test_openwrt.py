@@ -1,9 +1,7 @@
 """Tests for the OpenWrt adapter — SSH is mocked."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from routerless.adapters.openwrt import (
     OpenWrtAdapter,
@@ -22,7 +20,7 @@ from routerless.models.config import (
     TargetConfig,
     TargetType,
 )
-from routerless.models.status import AdapterStatus, ConnectedDevice, WifiRadio
+from routerless.models.status import AdapterStatus
 
 TARGET = TargetConfig(
     type=TargetType.OPENWRT,
@@ -168,7 +166,6 @@ class TestApplyDhcp:
         )
         existing_output = b"dhcp.@host[0].mac='AA:BB:CC:DD:EE:FF'\n"
         mock_client = _mock_ssh_client({
-            "uci show dhcp | grep '@host.*\\.mac='": existing_output,
             "uci show dhcp | grep '@host.*\\.mac='": existing_output,
         })
 

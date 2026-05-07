@@ -408,6 +408,9 @@ tests/                      # pytest — all device I/O mocked
 # Install in editable mode with dev dependencies
 pip install -e ".[dev]"
 
+# Lint
+ruff check .
+
 # Run all tests
 pytest
 

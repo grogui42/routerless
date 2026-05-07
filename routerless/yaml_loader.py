@@ -5,7 +5,6 @@ configuration loader.
 from __future__ import annotations
 
 import os
-from glob import glob
 from pathlib import Path
 from typing import Any
 

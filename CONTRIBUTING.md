@@ -59,6 +59,7 @@ Python 3.13+ is required.
 - **No docstrings, comments, or type annotations** on code you didn't change.
 - **No `print()`** — use `click.echo()` for all user-facing output.
 - **Secrets must never be logged** or included in error messages.
+- **Lint with ruff** — run `ruff check .` before committing. CI enforces it.
 - Apply only what is requested — don't add features, refactors, or "improvements" beyond what was asked.
 
 ---

@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import yaml
 from click.testing import CliRunner
 
@@ -45,7 +44,10 @@ def _device_cfg(
 ) -> NetworkConfig:
     return NetworkConfig(
         targets={"router": TARGET_CFG},
-        dhcp=DHCPConfig(subnet="192.168.1.0/24", gateway="192.168.1.1", static_leases=leases or []) if leases is not None else None,
+        dhcp=(
+            DHCPConfig(subnet="192.168.1.0/24", gateway="192.168.1.1", static_leases=leases or [])
+            if leases is not None else None
+        ),
         nat=NATConfig(port_forwards=pfs or []) if pfs is not None else None,
         firewall=FirewallConfig(rules=rules or []) if rules is not None else None,
     )
@@ -124,7 +126,8 @@ class TestMergeSection:
         assert len(result["rules"]) == 1
 
     def test_empty_existing(self) -> None:
-        result = _merge_section("dhcp", {}, {"static_leases": [{"name": "NAS", "mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.1.20"}]})
+        device = {"static_leases": [{"name": "NAS", "mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.1.20"}]}
+        result = _merge_section("dhcp", {}, device)
         assert len(result["static_leases"]) == 1
 
 
@@ -179,7 +182,9 @@ class TestCmdExportCreate:
                 patch("routerless.cli._load", return_value=NetworkConfig(targets={"r": TARGET_CFG})),
                 patch("routerless.cli._get_adapter", return_value=adapter_mock),
             ):
-                result = runner.invoke(cli, ["export", "--target", "r", "--section", "dhcp", "--output-dir", "out", "config.yaml"])
+                result = runner.invoke(
+                    cli, ["export", "--target", "r", "--section", "dhcp", "--output-dir", "out", "config.yaml"]
+                )
             assert result.exit_code == 0, result.output
             assert Path("out/dhcp.yaml").exists()
 
@@ -257,14 +262,17 @@ class TestCmdExportExistingFile:
         _, out, final = self._run(device, existing, "dhcp", "a\n")
         assert "append" in out.lower()
         parsed = yaml.safe_load(final)
-        macs = [l["mac"] for l in parsed["static_leases"]]
+        macs = [entry["mac"] for entry in parsed["static_leases"]]
         assert "AA:BB:CC:DD:EE:FF" in macs
         assert "11:22:33:44:55:66" in macs
 
     def test_append_nat_adds_new_forwards(self) -> None:
         pf_b = PortForward(name="SSH", external_port=22, internal_ip="192.168.1.10", internal_port=22)
         device = _device_cfg(pfs=[_PF_A, pf_b])
-        existing = "port_forwards:\n- name: Plex\n  external_port: 32400\n  protocol: tcp\n  internal_ip: 192.168.1.20\n  internal_port: 32400\n"
+        existing = (
+            "port_forwards:\n- name: Plex\n  external_port: 32400\n"
+            "  protocol: tcp\n  internal_ip: 192.168.1.20\n  internal_port: 32400\n"
+        )
         _, out, final = self._run(device, existing, "nat", "a\n")
         parsed = yaml.safe_load(final)
         assert len(parsed["port_forwards"]) == 2

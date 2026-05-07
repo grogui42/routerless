@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from routerless.cli import _plan_dhcp, _plan_firewall, _plan_nat, cli
@@ -21,7 +20,6 @@ from routerless.models.config import (
     TargetConfig,
     TargetType,
 )
-
 
 # ---------------------------------------------------------------------------
 # _plan_dhcp
@@ -123,8 +121,12 @@ class TestPlanNat:
 
     def test_keyed_by_port_and_protocol(self) -> None:
         """Same port but different protocol → two separate adds."""
-        pf_tcp = PortForward(name="TCP", external_port=80, internal_ip="192.168.1.1", internal_port=80, protocol=Protocol.TCP)
-        pf_udp = PortForward(name="UDP", external_port=80, internal_ip="192.168.1.1", internal_port=80, protocol=Protocol.UDP)
+        pf_tcp = PortForward(
+            name="TCP", external_port=80, internal_ip="192.168.1.1", internal_port=80, protocol=Protocol.TCP
+        )
+        pf_udp = PortForward(
+            name="UDP", external_port=80, internal_ip="192.168.1.1", internal_port=80, protocol=Protocol.UDP
+        )
         local = NATConfig(port_forwards=[pf_tcp])
         device = NATConfig(port_forwards=[pf_udp])
         items = _plan_nat(local, device)
@@ -229,7 +231,7 @@ class TestCmdPlan:
         assert "NAS" in out
 
     def test_shows_remove(self) -> None:
-        local = _build_network_cfg(leases=[])  # dhcp section present but empty
+        _build_network_cfg(leases=[])  # dhcp section present but empty
         # give device a lease that local doesn't have
         from routerless.models.config import DHCPConfig
         device_cfg = NetworkConfig(

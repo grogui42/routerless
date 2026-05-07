@@ -197,7 +197,6 @@ def _write_file(path: Path, content: str, force: bool) -> bool:
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    verb = "overwrite" if path.exists() else "create"
     click.echo(f"  {click.style('create', fg='green')}  {path}")
     return True
 
@@ -265,7 +264,7 @@ def cmd_init(directory: str, force: bool) -> None:
 def cmd_validate(config: str) -> None:
     """Validate a configuration file (and all its !include references)."""
     cfg = _load(config)
-    click.echo(f"Configuration is valid.")
+    click.echo("Configuration is valid.")
     click.echo(f"  Targets  : {', '.join(cfg.targets) or '(none)'}")
     if cfg.dhcp:
         click.echo(f"  DHCP     : {len(cfg.dhcp.static_leases)} static lease(s)")
@@ -407,8 +406,8 @@ def _plan_dhcp(
     local: "DHCPConfig | None",
     device: "DHCPConfig | None",
 ) -> list[PlanItem]:
-    local_map = {l.mac.upper(): l for l in (local.static_leases if local else [])}
-    device_map = {l.mac.upper(): l for l in (device.static_leases if device else [])}
+    local_map = {s.mac.upper(): s for s in (local.static_leases if local else [])}
+    device_map = {s.mac.upper(): s for s in (device.static_leases if device else [])}
     items: list[PlanItem] = []
     for mac, lease in local_map.items():
         if mac not in device_map:
@@ -446,7 +445,8 @@ def _plan_nat(
     for key, pf in local_map.items():
         proto = pf.protocol.value
         if key not in device_map:
-            items.append(("add", f'rule "{pf.name}"  {proto}  :{pf.external_port} → {pf.internal_ip}:{pf.internal_port}'))
+            desc = f'rule "{pf.name}"  {proto}  :{pf.external_port} → {pf.internal_ip}:{pf.internal_port}'
+            items.append(("add", desc))
         else:
             d = device_map[key]
             changes: list[str] = []
@@ -461,7 +461,8 @@ def _plan_nat(
     for key, pf in device_map.items():
         if key not in local_map:
             proto = pf.protocol.value
-            items.append(("remove", f'rule "{pf.name}"  {proto}  :{pf.external_port} → {pf.internal_ip}:{pf.internal_port}'))
+            desc = f'rule "{pf.name}"  {proto}  :{pf.external_port} → {pf.internal_ip}:{pf.internal_port}'
+            items.append(("remove", desc))
     return items
 
 
@@ -558,7 +559,8 @@ def cmd_plan(config: str, target: str, section: tuple[str, ...]) -> None:
         local_sec = getattr(cfg, sec, None)
 
         if local_sec is None:
-            click.echo(click.style(f"Section: {sec}", bold=True) + "  " + click.style("(no local config — skipped)", dim=True))
+            header = click.style(f"Section: {sec}", bold=True)
+            click.echo(header + "  " + click.style("(no local config — skipped)", dim=True))
             click.echo("")
             continue
 
@@ -791,10 +793,10 @@ _SECTION_FILENAME: dict[str, str] = {
 def _merge_section(sec: str, existing: dict, device: dict) -> dict:
     """Return *existing* with new entries from *device* appended (no duplicates)."""
     if sec == "dhcp":
-        existing_macs = {str(l.get("mac", "")).upper() for l in existing.get("static_leases", [])}
+        existing_macs = {str(e.get("mac", "")).upper() for e in existing.get("static_leases", [])}
         new_leases = [
-            l for l in device.get("static_leases", [])
-            if str(l.get("mac", "")).upper() not in existing_macs
+            entry for entry in device.get("static_leases", [])
+            if str(entry.get("mac", "")).upper() not in existing_macs
         ]
         result = dict(existing)
         result["static_leases"] = list(existing.get("static_leases", [])) + new_leases
@@ -884,7 +886,6 @@ def cmd_export(config: str, target: str, section: tuple[str, ...], output_dir: s
         raise click.ClickException(f"Failed to read device configuration: {exc}") from exc
 
     out_dir = Path(output_dir)
-    dir_is_new = not out_dir.exists()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     created_sections: list[str] = []
@@ -909,7 +910,8 @@ def cmd_export(config: str, target: str, section: tuple[str, ...], output_dir: s
 
         existing_text = out_path.read_text(encoding="utf-8")
         if existing_text.strip() == device_yaml.strip():
-            click.echo(click.style(f"  {sec}", bold=True) + f"  {out_path}  " + click.style("✓ no differences", fg="green"))
+            msg = click.style(f"  {sec}", bold=True) + f"  {out_path}  " + click.style("✓ no differences", fg="green")
+            click.echo(msg)
             continue
 
         diff_lines = list(difflib.unified_diff(

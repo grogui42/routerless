@@ -484,7 +484,14 @@ class BboxUltimAdapter(BaseAdapter):
                 internal_port=int(int_port),
             ))
 
-        from routerless.models.config import DHCPConfig, FirewallAction, FirewallConfig, FirewallDirection, FirewallRule, NATConfig
+        from routerless.models.config import (
+            DHCPConfig,
+            FirewallAction,
+            FirewallConfig,
+            FirewallDirection,
+            FirewallRule,
+            NATConfig,
+        )
 
         firewall_rules: list[FirewallRule] = []
         for rule in fw_rules_raw:
