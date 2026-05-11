@@ -20,7 +20,6 @@ See: https://dev.freebox.fr/sdk/os/
 """
 from __future__ import annotations
 
-import json
 import sys
 import time
 from typing import Any
@@ -80,7 +79,7 @@ def main() -> int:
             app_token, status = _poll_authorization(client, track_id)
 
             if status == "granted":
-                print(f"✓ Authorization granted!")
+                print("✓ Authorization granted!")
                 print()
                 print("=" * 60)
                 print("SUCCESS! Here is your app_token:")

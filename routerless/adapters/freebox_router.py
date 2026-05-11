@@ -56,7 +56,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from base64 import b64encode
 from typing import Any
 
 import httpx
@@ -114,7 +113,7 @@ class FreeboxRouterAdapter(BaseAdapter):
             verify = str(FREEBOX_CA_BUNDLE)  # Use embedded Root CA bundle
         else:
             verify = False
-        
+
         return httpx.Client(
             base_url=_BASE_URL,
             timeout=_DEFAULT_TIMEOUT,
@@ -334,7 +333,7 @@ class FreeboxRouterAdapter(BaseAdapter):
             "wan_port_end": pf.external_port,
             "lan_ip": pf.internal_ip,
             "lan_port": pf.internal_port,
-            "src_ip": pf.external_ip or "0.0.0.0",
+            "src_ip": pf.external_ip or "0.0.0.0",  # noqa: S104 intentional wildcard
             "comment": pf.name,
         }
         self._post(client, "/fw/redir/", data)
@@ -440,7 +439,6 @@ class FreeboxRouterAdapter(BaseAdapter):
         port_forwards: list[PortForward] = []
         for rule in nat_rules:
             wan_start = rule.get("wan_port_start")
-            wan_end = rule.get("wan_port_end")
             lan_port = rule.get("lan_port")
             lan_ip = rule.get("lan_ip")
             if not (wan_start and lan_port and lan_ip):
@@ -454,7 +452,7 @@ class FreeboxRouterAdapter(BaseAdapter):
                 external_port=int(wan_start),
                 internal_ip=lan_ip,
                 internal_port=int(lan_port),
-                external_ip=rule.get("src_ip") if rule.get("src_ip") != "0.0.0.0" else None,
+                external_ip=rule.get("src_ip") if rule.get("src_ip") != "0.0.0.0" else None,  # noqa: S104 intentional wildcard
             ))
 
         from routerless.models.config import DHCPConfig, NATConfig

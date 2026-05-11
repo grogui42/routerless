@@ -339,27 +339,6 @@ class TestApplyNat:
     def test_protocol_mapping(self) -> None:
         """Test that protocols are mapped correctly."""
         adapter = _adapter()
-        # TCP
-        config_tcp = NATConfig(
-            port_forwards=[
-                PortForward(name="TCP", protocol=Protocol.TCP, external_port=1000,
-                           internal_ip="192.168.1.1", internal_port=1000)
-            ]
-        )
-        # UDP
-        config_udp = NATConfig(
-            port_forwards=[
-                PortForward(name="UDP", protocol=Protocol.UDP, external_port=2000,
-                           internal_ip="192.168.1.1", internal_port=2000)
-            ]
-        )
-        # BOTH
-        config_both = NATConfig(
-            port_forwards=[
-                PortForward(name="BOTH", protocol=Protocol.BOTH, external_port=3000,
-                           internal_ip="192.168.1.1", internal_port=3000)
-            ]
-        )
 
         assert adapter._PROTO_TO_FB[Protocol.TCP] == "tcp"
         assert adapter._PROTO_TO_FB[Protocol.UDP] == "udp"
