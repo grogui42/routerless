@@ -285,7 +285,9 @@ targets:
   freebox:
     type: freebox
     host: !secret freebox_host
+    username: admin
     password: !secret freebox_app_token
+    verify_ssl: true  # Validate Freebox Root CA certificate (default: true)
 
   openwrt:
     type: openwrt
@@ -470,6 +472,8 @@ Or follow these steps manually:
   3. `POST /login/session/` → receive session_token
   4. Include `X-Fbx-App-Auth: {session_token}` in all subsequent requests
 - Base URL: `https://mafreebox.freebox.fr/api/v4`
+- **SSL/TLS:** Freebox uses self-signed certificates. Routerless validates them using embedded Root CA certificates by default.
+  To disable verification (not recommended), set `verify_ssl: false` in your target config.
 - Protocol mapping: `Protocol.BOTH` → `"tcp_udp"` (vs Bbox's `"all"`)
 - **Firewall:** Not available in official Freebox OS API — `apply_firewall()` raises `NotImplementedError`
 - **Status/Devices/WiFi:** Not yet implemented — raises `NotImplementedError`

@@ -97,6 +97,16 @@ Adapter registry is in `cli.py → _ADAPTER_MAP`. Adding a new adapter requires:
   4. Receive `session_token` and include in all subsequent requests as `X-Fbx-App-Auth: {token}`
 - **Base URL:** `https://mafreebox.freebox.fr/api/v4`
 - **Configuration:** `target.password` must contain the app_token (obtained once via OAuth flow on the Freebox)
+- **SSL/TLS:** Freebox uses self-signed certificates issued by 'Freebox Root CA' (RSA) or 'Freebox ECC Root CA' (ECDSA).
+  By default, routerless validates these using embedded Root CA certificates. To disable verification (not recommended):
+  ```yaml
+  targets:
+    freebox:
+      type: freebox
+      host: 192.168.1.254
+      password: !secret freebox_app_token
+      verify_ssl: false  # Not recommended
+  ```
 - **Endpoints confirmed:**
   - `GET/POST/PUT/DELETE /dhcp/static_lease/` — static DHCP reservations
   - `GET/POST/PUT/DELETE /dhcp/static_lease/{id}` — manage specific lease

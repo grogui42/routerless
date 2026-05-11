@@ -43,6 +43,7 @@ path = "routerless/version.py"
 packages = ["routerless"]
 include = [
     "routerless/templates/*",
+    "routerless/certificates/*",
 ]
 
 [project.optional-dependencies]

@@ -6,6 +6,13 @@ Requires an app_token which must be obtained through the first-time authorizatio
 
 API Reference: https://dev.freebox.fr/sdk/os/
 
+CERTIFICATE HANDLING
+---------------------
+Freebox uses self-signed certificates issued by either 'Freebox Root CA' (RSA) or
+'Freebox ECC Root CA' (ECDSA). By default, routerless validates these using embedded
+Root CA certificates. To disable SSL verification (not recommended), set verify_ssl=False
+in your target configuration.
+
 CONFIRMED ENDPOINTS
 ---------------------------
 DHCP static leases:
@@ -55,6 +62,7 @@ from typing import Any
 import httpx
 
 from routerless.adapters.base import BaseAdapter
+from routerless.certificates import FREEBOX_CA_BUNDLE
 from routerless.models.config import (
     DHCPConfig,
     FirewallConfig,
@@ -101,10 +109,17 @@ class FreeboxRouterAdapter(BaseAdapter):
 
     def _make_client(self) -> httpx.Client:
         """Create an httpx client with appropriate defaults."""
+        # Determine SSL verification
+        if self.target.verify_ssl:
+            verify = str(FREEBOX_CA_BUNDLE)  # Use embedded Root CA bundle
+        else:
+            verify = False
+        
         return httpx.Client(
             base_url=_BASE_URL,
             timeout=_DEFAULT_TIMEOUT,
             follow_redirects=True,
+            verify=verify,
         )
 
     def _get_challenge(self, client: httpx.Client) -> str:

@@ -43,8 +43,9 @@ class FirewallDirection(str, Enum):
 class TargetConfig(BaseModel):
     type: TargetType
     host: str
-    # HTTP-based targets (Bbox)
+    # HTTP-based targets (Bbox, Freebox)
     password: str | None = None
+    verify_ssl: bool = True  # Validate SSL certificates (default: True)
     # SSH-based targets (OpenWrt, Qhora)
     ssh_user: str | None = None
     ssh_password: str | None = None
