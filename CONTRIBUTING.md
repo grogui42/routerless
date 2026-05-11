@@ -140,6 +140,49 @@ The general pattern:
 
 ---
 
+## Setting Up Freebox
+
+The Freebox adapter requires an `app_token` to authenticate with your Freebox router.
+This token must be obtained through a one-time authorization flow.
+
+### Obtaining the app_token
+
+Use the provided utility script to automate the authorization process:
+
+```bash
+python -m routerless.scripts.get_freebox_app_token
+```
+
+The script will:
+
+1. Connect to your Freebox and request authorization
+2. Display instructions to press the WiFi button on your Freebox device
+3. Poll until you grant access (you have ~2 minutes)
+4. Display the `app_token` to store in your configuration
+
+### Using the app_token
+
+Once you have the token, store it in `secrets.yaml`:
+
+```yaml
+freebox_app_token: abc123xyz...
+```
+
+Then reference it in your configuration:
+
+```yaml
+targets:
+  freebox:
+    type: freebox
+    host: 192.168.1.254
+    username: admin
+    password: !secret freebox_app_token
+```
+
+The Freebox adapter will automatically handle authentication on each operation.
+
+---
+
 ## Releases
 
 Releases are automated via GitHub Actions when a version tag is pushed.

@@ -472,6 +472,8 @@ Or follow these steps manually:
 - Protocol mapping: `Protocol.BOTH` → `"tcp_udp"` (vs Bbox's `"all"`)
 - **Firewall:** Not available in official Freebox OS API — `apply_firewall()` raises `NotImplementedError`
 - **Status/Devices/WiFi:** Not yet implemented — raises `NotImplementedError`
+- **Obtaining app_token:** Use `python -m routerless.scripts.get_freebox_app_token` to interactively obtain your app_token.
+  See [CONTRIBUTING.md](CONTRIBUTING.md#setting-up-freebox) for details.
 
 ### OpenWrt / QNAP Qhora
 
