@@ -41,6 +41,9 @@ path = "routerless/version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["routerless"]
+include = [
+    "routerless/templates/*",
+]
 
 [project.optional-dependencies]
 dev = [

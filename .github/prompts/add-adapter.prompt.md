@@ -95,7 +95,7 @@ No other CLI changes are needed. All commands work generically through `BaseAdap
 
 Verify the full command list in `cli.py` (`@cli.command(...)`) in case new commands were added since this prompt was written.
 
-### 4. `config/configuration.yaml` — Add a target example
+### 4. `examples/configuration.yaml` — Add a target example
 
 ```yaml
 targets:
@@ -105,7 +105,7 @@ targets:
     password: !secret myrouter_password
 ```
 
-Add the corresponding secrets to `config/secrets.yaml`.
+Add the corresponding secrets to `examples/secrets.yaml`.
 
 ### 5. `tests/test_my_router.py` — Tests (all I/O mocked)
 
@@ -147,6 +147,6 @@ Add a section to `AGENTS.md` under the appropriate heading describing:
 
 ```bash
 pytest                                          # must stay green
-routerless validate config/configuration.yaml  # config parses
-routerless status --target myrouter config/configuration.yaml  # live test
+routerless validate examples/configuration.yaml  # config parses
+routerless status --target myrouter examples/configuration.yaml  # live test
 ```

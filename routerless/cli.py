@@ -90,106 +90,23 @@ def cli() -> None:
 
 
 # ---------------------------------------------------------------------------
-# init — template constants
+# init — template loading
 # ---------------------------------------------------------------------------
 
-_TEMPLATE_CONFIGURATION = """\
-version: "1.0"
+def _get_template_dir() -> Path:
+    """Return the path to the templates directory (inside the routerless package)."""
+    return Path(__file__).parent / "templates"
 
-# ---------------------------------------------------------------------------
-# Targets — one entry per router/box. Credentials are loaded from secrets.yaml
-# ---------------------------------------------------------------------------
-targets:
-  bbox:
-    type: bbox_ultim
-    host: !secret bbox_host
-    password: !secret bbox_password
 
-  # openwrt:
-  #   type: openwrt
-  #   host: !secret openwrt_host
-  #   ssh_user: root
-  #   ssh_key: !secret openwrt_ssh_key
-  #   ssh_port: 22
-
-  # qhora:
-  #   type: qnap_qhora
-  #   host: !secret qhora_host
-  #   ssh_user: admin
-  #   ssh_password: !secret qhora_ssh_password
-  #   ssh_port: 22200
-
-# ---------------------------------------------------------------------------
-# Configuration sections — split into separate files via !include
-# ---------------------------------------------------------------------------
-dhcp:     !include dhcp.yaml
-nat:      !include nat.yaml
-firewall: !include firewall.yaml
-"""
-
-_TEMPLATE_SECRETS = """\
-# Copy this file to secrets.yaml and fill in your credentials.
-# secrets.yaml is gitignored and must NEVER be committed.
-
-bbox_host: "192.168.1.254"
-bbox_password: "your_bbox_password"
-
-# openwrt_host: "192.168.1.1"
-# openwrt_ssh_key: "~/.ssh/id_ed25519"
-
-# qhora_host: "192.168.1.2"
-# qhora_ssh_password: "your_qhora_password"
-"""
-
-_TEMPLATE_DHCP = """\
-subnet: "192.168.1.0/24"
-gateway: "192.168.1.1"
-dns:
-  - "192.168.1.1"
-  - "8.8.8.8"
-range:
-  start: "192.168.1.100"
-  end:   "192.168.1.200"
-lease_time: "24h"
-
-# Static DHCP reservations — add as many as needed.
-static_leases:
-  - name: "NAS"
-    mac: "AA:BB:CC:DD:EE:FF"
-    ip:  "192.168.1.20"
-    hostname: nas
-"""
-
-_TEMPLATE_NAT = """\
-port_forwards:
-  - name: "Home Assistant"
-    protocol: tcp
-    external_port: 8123
-    internal_ip: "192.168.1.20"
-    internal_port: 8123
-"""
-
-_TEMPLATE_FIREWALL = """\
-rules:
-  - name: "Block IoT to WAN"
-    direction: forward
-    src: iot
-    dest: wan
-    action: DROP
-"""
-
-_TEMPLATE_GITIGNORE = """\
-# Secrets — never commit
-secrets.yaml
-
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-*.egg-info/
-dist/
-.pytest_cache/
-"""
+def _load_template(name: str) -> str:
+    """Load a template file by name (e.g., 'configuration.yaml', 'dhcp.yaml')."""
+    template_path = _get_template_dir() / name
+    if not template_path.exists():
+        raise click.ClickException(
+            f"Template file not found: {template_path}\n"
+            f"Make sure the package is correctly installed."
+        )
+    return template_path.read_text(encoding="utf-8")
 
 
 def _write_file(path: Path, content: str, force: bool) -> bool:
@@ -233,16 +150,21 @@ def cmd_init(directory: str, force: bool) -> None:
 
     click.echo(f"Initialising routerless config in {click.style(str(root.resolve()), bold=True)}\n")
 
-    files = [
-        (root / "configuration.yaml",   _TEMPLATE_CONFIGURATION),
-        (root / "secrets.yaml.example", _TEMPLATE_SECRETS),
-        (root / "dhcp.yaml",            _TEMPLATE_DHCP),
-        (root / "nat.yaml",             _TEMPLATE_NAT),
-        (root / "firewall.yaml",        _TEMPLATE_FIREWALL),
-        (root / ".gitignore",           _TEMPLATE_GITIGNORE),
+    # Template file mappings: (destination_path, template_filename)
+    template_files = [
+        (root / "configuration.yaml", "configuration.yaml"),
+        (root / "secrets.yaml.example", "secrets.yaml.example"),
+        (root / "dhcp.yaml", "dhcp.yaml"),
+        (root / "nat.yaml", "nat.yaml"),
+        (root / "firewall.yaml", "firewall.yaml"),
+        (root / ".gitignore", ".gitignore"),
     ]
 
-    written = sum(_write_file(p, content, force) for p, content in files)
+    written = 0
+    for dest_path, template_name in template_files:
+        content = _load_template(template_name)
+        if _write_file(dest_path, content, force):
+            written += 1
 
     click.echo("")
     if written:

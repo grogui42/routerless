@@ -161,8 +161,8 @@ class TestMyFeature:
 
 ```bash
 pytest                    # all tests green
-routerless my-feature --target bbox config/configuration.yaml   # live smoke test
-routerless my-feature --target openwrt config/configuration.yaml
+routerless my-feature --target bbox examples/configuration.yaml   # live smoke test
+routerless my-feature --target openwrt examples/configuration.yaml
 ```
 
 ---

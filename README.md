@@ -271,7 +271,7 @@ routerless wifi off --target openwrt ~/my-network
 
 ## Configuration
 
-### `config/configuration.yaml`
+### `examples/configuration.yaml`
 
 ```yaml
 version: "1.0"
@@ -306,7 +306,7 @@ nat:      !include nat.yaml
 firewall: !include firewall.yaml
 ```
 
-### `config/secrets.yaml` (never committed)
+### `examples/secrets.yaml` (never committed)
 
 ```yaml
 bbox_host: 192.168.1.254
@@ -320,9 +320,9 @@ qhora_host: 192.168.1.2
 qhora_ssh_password: your_password
 ```
 
-Copy `config/secrets.yaml.example` to get started.
+Copy `examples/secrets.yaml.example` to get started.
 
-### `config/dhcp.yaml`
+### `examples/dhcp.yaml`
 
 ```yaml
 subnet: "192.168.1.0/24"
@@ -349,7 +349,7 @@ used by `plan` / `apply` to detect changes. It must be DNS-safe (letters, digits
 hyphens — no spaces or accents). When omitted, `name` is used in its place.
 `name` is a human-readable label used only for display in CLI output.
 
-### `config/nat.yaml`
+### `examples/nat.yaml`
 
 ```yaml
 port_forwards:
@@ -360,7 +360,7 @@ port_forwards:
     internal_port: 8123
 ```
 
-### `config/firewall.yaml`
+### `examples/firewall.yaml`
 
 ```yaml
 rules:
@@ -395,12 +395,13 @@ routerless/
     ├── freebox_router.py   # Freebox — HTTPS REST
     ├── openwrt.py          # OpenWrt — SSH + UCI
     └── qnap_qhora.py       # QNAP Qhora — delegates to OpenWrtAdapter
-config/
+examples/
 ├── configuration.yaml
 ├── secrets.yaml.example
 ├── dhcp.yaml
 ├── nat.yaml
 ├── firewall.yaml
+├── templates/              # Generic templates used by `init` command
 └── static_leases/
 tests/                      # pytest — all device I/O mocked
 .github/

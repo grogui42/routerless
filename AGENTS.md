@@ -12,9 +12,9 @@ pip install -e ".[dev]"
 pytest
 
 # Run CLI
-routerless validate config/configuration.yaml
-routerless apply --target bbox --section dhcp config/configuration.yaml
-routerless status --target bbox config/configuration.yaml
+routerless validate examples/configuration.yaml
+routerless apply --target bbox --section dhcp examples/configuration.yaml
+routerless status --target bbox examples/configuration.yaml
 ```
 
 ## Project Layout
@@ -30,8 +30,10 @@ routerless/
     freebox_router.py # Freebox via HTTPS REST (HMAC-SHA1 auth + session token)
     openwrt.py       # OpenWrt via SSH + UCI commands
     qnap_qhora.py    # QNAP Qhora 301W — delegates to OpenWrtAdapter
-config/
-  configuration.yaml # Main config (targets + !include sections)
+  scripts/           # Utility scripts (e.g., get_freebox_app_token.py)
+  templates/         # Template files used by 'init' command
+examples/
+  configuration.yaml # Example config (targets + !include sections)
   secrets.yaml       # NOT committed — copy from secrets.yaml.example
 tests/               # pytest, all HTTP mocked via unittest.mock.patch
 ```
