@@ -12,7 +12,8 @@ Usage:
 
 The script will:
 1. Request authorization from the Freebox
-2. Display a PIN and ask you to grant application on Freebox device (press the WiFi button or accept using buttons depending on the model)
+2. Display a PIN and ask you to grant application on Freebox device
+   (press the WiFi button or accept using buttons depending on the model)
 3. Poll for authorization status
 4. Return the app_token to store in secrets.yaml
 
