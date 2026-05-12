@@ -40,7 +40,7 @@ AUTHENTICATION FLOW
    - password = hmac-sha1(app_token, challenge)
 5. Include X-Fbx-App-Auth: {session_token} in all subsequent requests
 
-For routerless, we assume the app_token is already stored in config.password,
+For routerless, we assume the app_token is already stored in config.app_token,
 and we perform the login flow automatically on each operation.
 
 RESPONSE FORMAT
@@ -88,7 +88,7 @@ class FreeboxRouterAdapter(BaseAdapter):
     The adapter handles DHCP static leases and NAT port forwarding.
     Firewall rules are not available in the official Freebox OS API.
 
-    Authentication uses app_token (stored in target.password) and requires
+    Authentication uses app_token (stored in target.app_token) and requires
     an active session_token obtained via HMAC-SHA1 challenge-response.
     """
 
@@ -135,9 +135,9 @@ class FreeboxRouterAdapter(BaseAdapter):
 
         Raises httpx.HTTPStatusError on failure.
         """
-        app_token = self.target.password
+        app_token = self.target.app_token
         if not app_token:
-            raise ValueError("Freebox adapter requires 'password' field (app_token)")
+            raise ValueError("Freebox adapter requires 'app_token' field")
 
         # Get challenge
         challenge = self._get_challenge(client)

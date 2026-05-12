@@ -20,7 +20,7 @@ from routerless.models.config import (
 TARGET = TargetConfig(
     type=TargetType.FREEBOX,
     host="192.168.1.254",
-    password="test_app_token_value_here",
+    app_token="test_app_token_value_here",
 )
 
 

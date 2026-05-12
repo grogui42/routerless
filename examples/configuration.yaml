@@ -12,7 +12,7 @@ targets:
   freebox:
     type: freebox
     host: !secret freebox_host
-    password: !secret freebox_app_token
+    app_token: !secret freebox_app_token
     verify_ssl: true  # Validate Freebox Root CA certificate (default: true)
 
   openwrt:

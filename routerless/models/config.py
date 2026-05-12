@@ -44,7 +44,8 @@ class TargetConfig(BaseModel):
     type: TargetType
     host: str
     # HTTP-based targets (Bbox, Freebox)
-    password: str | None = None
+    password: str | None = None  # Bbox password or legacy Freebox field
+    app_token: str | None = None  # Freebox app_token (preferred over password)
     verify_ssl: bool = True  # Validate SSL certificates (default: True)
     # SSH-based targets (OpenWrt, Qhora)
     ssh_user: str | None = None
@@ -54,8 +55,10 @@ class TargetConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_credentials(self) -> "TargetConfig":
-        if self.type in (TargetType.BBOX_ULTIM, TargetType.FREEBOX) and self.password is None:
+        if self.type == TargetType.BBOX_ULTIM and self.password is None:
             raise ValueError(f"{self.type.value} target requires 'password'")
+        if self.type == TargetType.FREEBOX and self.app_token is None:
+            raise ValueError(f"{self.type.value} target requires 'app_token'")
         if self.type in (TargetType.OPENWRT, TargetType.QNAP_QHORA):
             if self.ssh_user is None:
                 raise ValueError(f"{self.type.value} target requires 'ssh_user'")

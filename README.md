@@ -466,7 +466,9 @@ Or follow these steps manually:
 
 ### Freebox
 
-- Auth is **HMAC-SHA1 challenge-response** using an app_token stored in `config.password`.
+- **Obtaining app_token:** Use `python -m routerless.scripts.get_freebox_app_token` to interactively obtain your app_token, then store it in `secrets.yaml`.
+  See [CONTRIBUTING.md](CONTRIBUTING.md#setting-up-freebox) for details.
+- Auth is **HMAC-SHA1 challenge-response** using an app_token stored in `config.app_token`.
   1. `GET /login/` → fetch a challenge
   2. Compute `password = hmac-sha1(app_token, challenge)`
   3. `POST /login/session/` → receive session_token
@@ -477,8 +479,6 @@ Or follow these steps manually:
 - Protocol mapping: `Protocol.BOTH` → `"tcp_udp"` (vs Bbox's `"all"`)
 - **Firewall:** Not available in official Freebox OS API — `apply_firewall()` raises `NotImplementedError`
 - **Status/Devices/WiFi:** Not yet implemented — raises `NotImplementedError`
-- **Obtaining app_token:** Use `python -m routerless.scripts.get_freebox_app_token` to interactively obtain your app_token.
-  See [CONTRIBUTING.md](CONTRIBUTING.md#setting-up-freebox) for details.
 
 ### OpenWrt / QNAP Qhora
 
