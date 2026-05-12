@@ -1,0 +1,6 @@
+rules:
+  - name: "Block IoT to WAN"
+    direction: forward
+    src: iot
+    dest: wan
+    action: DROP

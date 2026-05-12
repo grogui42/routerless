@@ -1,0 +1,37 @@
+version: "1.0"
+
+# ---------------------------------------------------------------------------
+# Targets (router/box credentials — loaded from secrets.yaml)
+# ---------------------------------------------------------------------------
+targets:
+  bbox:
+    type: bbox_ultim
+    host: !secret bbox_host
+    password: !secret bbox_password
+
+  # freebox:
+  #   type: freebox
+  #   host: !secret freebox_host
+  #   app_token: !secret freebox_app_token
+  #   verify_ssl: true  # Validate Freebox Root CA certificate (default: true)
+
+  # openwrt:
+  #   type: openwrt
+  #   host: !secret openwrt_host
+  #   ssh_user: root
+  #   ssh_key: !secret openwrt_ssh_key
+  #   ssh_port: 22
+
+  # qhora:
+  #   type: qnap_qhora
+  #   host: !secret qhora_host
+  #   ssh_user: admin
+  #   ssh_password: !secret qhora_ssh_password
+  #   ssh_port: 22200
+
+# ---------------------------------------------------------------------------
+# Configuration sections — split into separate files via !include
+# ---------------------------------------------------------------------------
+dhcp:     !include dhcp.yaml
+nat:      !include nat.yaml
+firewall: !include firewall.yaml

@@ -9,6 +9,12 @@ targets:
     host: !secret bbox_host
     password: !secret bbox_password
 
+  freebox:
+    type: freebox
+    host: !secret freebox_host
+    app_token: !secret freebox_app_token
+    verify_ssl: true  # Validate Freebox Root CA certificate (default: true)
+
   openwrt:
     type: openwrt
     host: !secret openwrt_host

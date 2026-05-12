@@ -1,0 +1,10 @@
+# Secrets — never commit
+secrets.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.pytest_cache/

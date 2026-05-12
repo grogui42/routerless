@@ -1,6 +1,6 @@
 # Routerless — Agent Instructions
 
-Router-agnostic network configuration manager. Declarative YAML config → applied to Bbox Ultim, OpenWrt, and QNAP Qhora routers via adapter plugins.
+Router-agnostic network configuration manager. Declarative YAML config → applied to Bbox Ultim, Freebox, OpenWrt, and QNAP Qhora routers via adapter plugins.
 
 ## Quick Start
 
@@ -12,9 +12,9 @@ pip install -e ".[dev]"
 pytest
 
 # Run CLI
-routerless validate config/configuration.yaml
-routerless apply --target bbox --section dhcp config/configuration.yaml
-routerless status --target bbox config/configuration.yaml
+routerless validate examples/configuration.yaml
+routerless apply --target bbox --section dhcp examples/configuration.yaml
+routerless status --target bbox examples/configuration.yaml
 ```
 
 ## Project Layout
@@ -27,10 +27,13 @@ routerless/
   adapters/
     base.py          # BaseAdapter ABC — defines the contract
     bbox_ultim.py    # Bbox Ultim via HTTPS REST (cookie auth + btoken CSRF)
+    freebox_router.py # Freebox via HTTPS REST (HMAC-SHA1 auth + session token)
     openwrt.py       # OpenWrt via SSH + UCI commands
     qnap_qhora.py    # QNAP Qhora 301W — delegates to OpenWrtAdapter
-config/
-  configuration.yaml # Main config (targets + !include sections)
+  scripts/           # Utility scripts (e.g., get_freebox_app_token.py)
+  templates/         # Template files used by 'init' command
+examples/
+  configuration.yaml # Example config (targets + !include sections)
   secrets.yaml       # NOT committed — copy from secrets.yaml.example
 tests/               # pytest, all HTTP mocked via unittest.mock.patch
 ```
@@ -84,6 +87,37 @@ Adapter registry is in `cli.py → _ADAPTER_MAP`. Adding a new adapter requires:
   - `apply_dhcp` compares `lease.hostname or lease.name` against `existing["hostname"]` to decide create/update/skip.
   - `_plan_dhcp` compares `lease.hostname or lease.name` against `d.hostname or d.name`; reports `hostname: 'old' → 'new'`.
   - A `hostname` with spaces causes Bbox to return 400 "Invalid parameter" — always use `lease.hostname or lease.name`.
+
+## Freebox Router Adapter
+
+- **Auth:** HMAC-SHA1 challenge-response using app_token. Session established via `X-Fbx-App-Auth` header.
+  1. `GET /login/` — fetch a challenge
+  2. Compute `password = hmac-sha1(app_token, challenge)`
+  3. `POST /login/session/` with app_id, app_version, and password
+  4. Receive `session_token` and include in all subsequent requests as `X-Fbx-App-Auth: {token}`
+- **Base URL:** `https://mafreebox.freebox.fr/api/v4`
+- **Configuration:** `target.password` must contain the app_token (obtained once via OAuth flow on the Freebox)
+- **SSL/TLS:** Freebox uses self-signed certificates issued by 'Freebox Root CA' (RSA) or 'Freebox ECC Root CA' (ECDSA).
+  By default, routerless validates these using embedded Root CA certificates. To disable verification (not recommended):
+  ```yaml
+  targets:
+    freebox:
+      type: freebox
+      host: 192.168.1.254
+      password: !secret freebox_app_token
+      verify_ssl: false  # Not recommended
+  ```
+- **Endpoints confirmed:**
+  - `GET/POST/PUT/DELETE /dhcp/static_lease/` — static DHCP reservations
+  - `GET/POST/PUT/DELETE /dhcp/static_lease/{id}` — manage specific lease
+  - `GET/POST/PUT/DELETE /fw/redir/` — port forwarding rules (NAT)
+  - `GET/POST/PUT/DELETE /fw/redir/{id}` — manage specific rule
+- **Response shape:** `{ "success": true, "result": {...} }`  — errors return `{ "success": false, "error_code": "...", "msg": "..." }`
+- **DHCP static lease fields:** `mac`, `ip`, `comment` (friendly name), `hostname` (read-only)
+- **NAT rule fields:** `enabled`, `ip_proto` (tcp/udp/tcp_udp), `wan_port_start`, `wan_port_end`, `lan_ip`, `lan_port`, `src_ip` (source IP filter, "0.0.0.0" = any)
+- **Protocol mapping:** `Protocol.BOTH` → `"tcp_udp"` (vs Bbox's `"all"`)
+- **Firewall:** Not available in official Freebox OS API — `apply_firewall()` raises `NotImplementedError`
+- **Status/Devices/WiFi:** Not yet implemented — raises `NotImplementedError`
 
 ## OpenWrt / QNAP Qhora Adapter
 

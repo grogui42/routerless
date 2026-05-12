@@ -1,0 +1,16 @@
+subnet: "192.168.1.0/24"
+gateway: "192.168.1.1"
+dns:
+  - "192.168.1.1"
+  - "8.8.8.8"
+range:
+  start: "192.168.1.100"
+  end:   "192.168.1.200"
+lease_time: "24h"
+
+# Static DHCP reservations — add as many as needed.
+static_leases:
+  - name: "NAS"
+    mac: "AA:BB:CC:DD:EE:FF"
+    ip:  "192.168.1.20"
+    hostname: nas
