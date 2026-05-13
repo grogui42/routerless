@@ -12,6 +12,7 @@ Thank you for taking the time to contribute! This document covers everything you
 - [Commit Messages](#commit-messages)
 - [Adding a New Router Adapter](#adding-a-new-router-adapter)
 - [Adding a New CLI Feature](#adding-a-new-cli-feature)
+- [Setting Up Freebox](#setting-up-freebox)
 
 ---
 
@@ -140,6 +141,30 @@ The general pattern:
 
 ---
 
+## Releases
+
+Releases are automated via GitHub Actions when a version tag is pushed.
+
+**Release workflow (maintainers only):**
+
+1. Bump `version` in `pyproject.toml` (e.g. `"0.2.0"`).
+2. Commit: `chore: bump version to 0.2.0`
+3. Tag and push:
+   ```bash
+   git tag v0.2.0
+   git push origin main --tags
+   ```
+4. The [release workflow](.github/workflows/release.yml) builds the package and publishes to PyPI.
+   A GitHub Release with auto-generated notes is created from the tag.
+
+**Versioning:** The project uses [Semantic Versioning](https://semver.org/).
+While in `0.x.y`, breaking changes may happen in minor versions.
+`1.0.0` will mark the first stable release (config schema + adapter API frozen).
+
+**Contributors** do not need to bump the version — the maintainer does that before cutting a release.
+
+---
+
 ## Setting Up Freebox
 
 The Freebox adapter requires an `app_token` to authenticate with your Freebox router.
@@ -180,27 +205,3 @@ targets:
 ```
 
 The Freebox adapter will automatically handle authentication on each operation.
-
----
-
-## Releases
-
-Releases are automated via GitHub Actions when a version tag is pushed.
-
-**Release workflow (maintainers only):**
-
-1. Bump `version` in `pyproject.toml` (e.g. `"0.2.0"`).
-2. Commit: `chore: bump version to 0.2.0`
-3. Tag and push:
-   ```bash
-   git tag v0.2.0
-   git push origin main --tags
-   ```
-4. The [release workflow](.github/workflows/release.yml) builds the package and publishes to PyPI.
-   A GitHub Release with auto-generated notes is created from the tag.
-
-**Versioning:** The project uses [Semantic Versioning](https://semver.org/).
-While in `0.x.y`, breaking changes may happen in minor versions.
-`1.0.0` will mark the first stable release (config schema + adapter API frozen).
-
-**Contributors** do not need to bump the version — the maintainer does that before cutting a release.
