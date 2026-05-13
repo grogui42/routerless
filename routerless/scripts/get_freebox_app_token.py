@@ -26,6 +26,7 @@ See: https://dev.freebox.fr/sdk/os/
 from __future__ import annotations
 
 import sys
+import ssl
 import time
 import argparse
 from typing import Any
@@ -66,7 +67,10 @@ def main() -> int:
         if args.disable_ssl_verify:
             verify = False
         else:
-            verify = str(FREEBOX_CA_BUNDLE)  # Use embedded Root CA bundle
+            ssl_ctx = ssl.create_default_context()  # NOSONAR Python 3.13+ so secure
+            ssl_ctx.load_verify_locations(str(FREEBOX_CA_BUNDLE))  # Use embedded Root CA bundle
+            ssl_ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT  # Disable strict validating introduced in Python 3.13, which doesn't work with default Freebox certificates
+            verify = ssl_ctx
 
         with httpx.Client(
             base_url=_BASE_URL,
