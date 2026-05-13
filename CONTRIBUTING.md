@@ -200,7 +200,6 @@ targets:
   freebox:
     type: freebox
     host: 192.168.1.254
-    username: admin
     password: !secret freebox_app_token
 ```
 

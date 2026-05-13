@@ -285,7 +285,6 @@ targets:
   freebox:
     type: freebox
     host: !secret freebox_host
-    username: admin
     password: !secret freebox_app_token
     verify_ssl: true  # Validate Freebox Root CA certificate (default: true)
 
