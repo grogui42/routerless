@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import sys
 import pytest
 
 from routerless.scripts.get_freebox_app_token import (
@@ -70,14 +71,14 @@ def test_poll_authorization_granted() -> None:
         "success": True,
         "result": {
             "status": "granted",
-            "app_token": "final_token",
+            "challenge": "xxx",
+            "password_salt": "yyy"  # NOSONAR : Test data
         },
     }
     mock_client.get.return_value = mock_response
 
-    app_token, status = _poll_authorization(mock_client, "track_id_123")
+    status = _poll_authorization(mock_client, "track_id_123")
 
-    assert app_token == "final_token"
     assert status == "granted"
 
 
@@ -125,7 +126,8 @@ def test_poll_authorization_pending_then_granted() -> None:
         "success": True,
         "result": {
             "status": "pending",
-            "app_token": "",
+            "challenge": "xxx",
+            "password_salt": "yyy"  # NOSONAR : Test data
         },
     }
 
@@ -135,16 +137,16 @@ def test_poll_authorization_pending_then_granted() -> None:
         "success": True,
         "result": {
             "status": "granted",
-            "app_token": "final_token_after_wait",
+            "challenge": "xxx",
+            "password_salt": "yyy"  # NOSONAR : Test data
         },
     }
 
     mock_client.get.side_effect = [pending_response, granted_response]
 
     with patch("time.sleep"):  # Mock sleep to avoid delays in tests
-        app_token, status = _poll_authorization(mock_client, "track_id_123")
+        status = _poll_authorization(mock_client, "track_id_123")
 
-    assert app_token == "final_token_after_wait"
     assert status == "granted"
     assert mock_client.get.call_count == 2
 
@@ -162,7 +164,6 @@ def test_main_success() -> None:
             "result": {
                 "track_id": "xyz789",
                 "app_token": "test_token",
-                "status": "pending",
             },
         }
 
@@ -172,7 +173,8 @@ def test_main_success() -> None:
             "success": True,
             "result": {
                 "status": "granted",
-                "app_token": "test_token",
+                "challenge": "xxx",
+                "password_salt": "yyy"  # NOSONAR : Test data
             },
         }
 
@@ -181,7 +183,8 @@ def test_main_success() -> None:
 
         with patch("builtins.print"):
             with patch("time.sleep"):
-                exit_code = main()
+                with patch.object(sys, 'argv', ['p.py']):
+                    exit_code = main()
 
         assert exit_code == 0
         mock_client.post.assert_called_once()
@@ -200,13 +203,13 @@ def test_main_failure_no_track_id() -> None:
             "success": True,
             "result": {
                 "app_token": "test_token",
-                "status": "pending",
             },
         }
 
         mock_client.post.return_value = auth_response
 
         with patch("builtins.print"):
-            exit_code = main()
+            with patch.object(sys, 'argv', ['p.py']):
+                exit_code = main()
 
         assert exit_code == 1
