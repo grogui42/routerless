@@ -204,3 +204,9 @@ targets:
 ```
 
 The Freebox adapter will automatically handle authentication on each operation.
+
+### Permissions
+
+Required permission(s) for the created token : 
+
+- "Modification des réglages de la Freebox"

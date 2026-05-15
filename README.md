@@ -466,6 +466,7 @@ Or follow these steps manually:
 ### Freebox
 
 - **Obtaining app_token:** Use `python -m routerless.scripts.get_freebox_app_token` to interactively obtain your app_token, then store it in `secrets.yaml`.
+  Set "_Modification des réglages de la Freebox_" permission on this token to be able to use _apply_ command.
   See [CONTRIBUTING.md](CONTRIBUTING.md#setting-up-freebox) for details.
 - Auth is **HMAC-SHA1 challenge-response** using an app_token stored in `config.app_token`.
   1. `GET /login/` → fetch a challenge
