@@ -57,6 +57,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import ssl
+import ipaddress
+
 from typing import Any
 
 import httpx
@@ -423,10 +425,17 @@ class FreeboxRouterAdapter(BaseAdapter):
         with self._make_client() as client:
             self._login(client)
             try:
+                dhcp_config = self._get(client, "/dhcp/config/")
                 dhcp_leases = self._list_dhcp_leases(client)
                 nat_rules = self._list_nat_rules(client)
             finally:
                 self._logout(client)
+
+        # Build subnet & gateway
+        gateway = dhcp_config.get('gateway')
+        netmask = dhcp_config.get('netmask')
+        if gateway and netmask:
+            subnet = str(ipaddress.IPv4Network(f"{gateway}/{netmask}", strict=False))
 
         # Build DHCP config
         leases: list[StaticLease] = []
@@ -463,8 +472,8 @@ class FreeboxRouterAdapter(BaseAdapter):
 
         return NetworkConfig(
             dhcp=DHCPConfig(
-                subnet="192.168.1.0/24",
-                gateway=self.target.host,
+                subnet=subnet,
+                gateway=gateway,
                 static_leases=leases,
             ) if leases else None,
             nat=NATConfig(port_forwards=port_forwards) if port_forwards else None,

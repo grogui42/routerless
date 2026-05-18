@@ -1,6 +1,6 @@
 # routerless
 
-[![CI](https://github.com/you/routerless/actions/workflows/ci.yml/badge.svg)](https://github.com/you/routerless/actions/workflows/ci.yml)
+[![CI](https://github.com/grogui42/routerless/actions/workflows/ci.yml/badge.svg)](https://github.com/grogui42/routerless/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/routerless)](https://pypi.org/project/routerless/)
 [![Python 3.13+](https://img.shields.io/pypi/pyversions/routerless)](https://pypi.org/project/routerless/)
 
