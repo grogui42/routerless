@@ -39,6 +39,7 @@ def _mock_http(adapter: FreeboxRouterAdapter, mock_client: MagicMock):
     cm.__exit__ = MagicMock(return_value=False)
     p_make = patch.object(adapter, "_make_client", return_value=cm)
     # Set the session_token during login
+
     def mock_login(client):
         adapter._session_token = "test_session_token"
     p_login = patch.object(adapter, "_login", side_effect=mock_login)
@@ -375,6 +376,26 @@ class TestDump:
         adapter = _adapter()
         mock_client = MagicMock()
 
+        dhcp_config = {
+            'enabled': True,
+            'sticky_assign': True,
+            'boot_server': '',
+            'netmask': '255.255.255.0',
+            'always_broadcast': False,
+            'dns': [
+                '192.168.1.254',
+                '',
+                '',
+                '',
+                '',
+                ''],
+            'ignore_out_of_range_hint': False,
+            'ip_range_end': '192.168.1.50',
+            'gateway': '192.168.1.254',
+            'options': {},
+            'boot_file': '',
+            'ip_range_start': '192.168.1.20'}
+
         dhcp_leases = [
             {"id": "1", "mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.1.10",
              "comment": "Hub", "hostname": "Hub"}
@@ -385,6 +406,7 @@ class TestDump:
         ]
 
         mock_client.get.side_effect = [
+            _fb_resp(result=dhcp_config),
             _fb_resp(result=dhcp_leases),
             _fb_resp(result=nat_rules),
         ]
@@ -395,6 +417,8 @@ class TestDump:
 
         # Should have DHCP and NAT sections
         assert result.dhcp is not None
+        assert result.dhcp.gateway == "192.168.1.254"
+        assert result.dhcp.subnet == "192.168.1.0/24"
         assert len(result.dhcp.static_leases) == 1
         assert result.dhcp.static_leases[0].mac == "AA:BB:CC:DD:EE:FF"
 
@@ -407,6 +431,7 @@ class TestDump:
         adapter = _adapter()
         mock_client = MagicMock()
         mock_client.get.side_effect = [
+            _fb_resp(result={}),  # no DHCP config
             _fb_resp(result=[]),  # no DHCP leases
             _fb_resp(result=[]),  # no NAT rules
         ]
