@@ -1,9 +1,9 @@
 """Tests for Freebox app_token retrieval script."""
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch
 
-import sys
 import pytest
 
 from routerless.scripts.get_freebox_app_token import (

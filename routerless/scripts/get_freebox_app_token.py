@@ -25,14 +25,15 @@ See: https://dev.freebox.fr/sdk/os/
 """
 from __future__ import annotations
 
-import sys
-import ssl
-import time
 import argparse
+import ssl
+import sys
+import time
 from typing import Any
-from routerless.certificates import FREEBOX_CA_BUNDLE
 
 import httpx
+
+from routerless.certificates import FREEBOX_CA_BUNDLE
 
 _DEFAULT_TIMEOUT = 10.0
 _BASE_URL = "https://mafreebox.freebox.fr/api/v4"
@@ -69,7 +70,8 @@ def main() -> int:
         else:
             ssl_ctx = ssl.create_default_context()  # NOSONAR Python 3.13+ so secure
             ssl_ctx.load_verify_locations(str(FREEBOX_CA_BUNDLE))  # Use embedded Root CA bundle
-            ssl_ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT  # Disable strict validating introduced in Python 3.13, which doesn't work with default Freebox certificates
+            # Disable strict validating introduced in Python 3.13, which doesn't work with default Freebox certificates
+            ssl_ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
             verify = ssl_ctx
 
         with httpx.Client(
