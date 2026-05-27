@@ -6,9 +6,13 @@ It performs the authorization flow, prompting the user to press a button on thei
 Freebox to grant access to routerless.
 
 Usage:
-    python -m routerless.scripts.get_freebox_app_token
+    python -m routerless.scripts.get_freebox_app_token [-h] [--disable-ssl-verify]
     # or
-    python routerless/scripts/get_freebox_app_token.py
+    python routerless/scripts/get_freebox_app_token.py [-h] [--disable-ssl-verify]
+
+Options:
+    -h, --help            show this help message and exit
+    --disable-ssl-verify  Disable SSL verification checks
 
 The script will:
 1. Request authorization from the Freebox
@@ -21,11 +25,15 @@ See: https://dev.freebox.fr/sdk/os/
 """
 from __future__ import annotations
 
+import argparse
+import ssl
 import sys
 import time
 from typing import Any
 
 import httpx
+
+from routerless.certificates import FREEBOX_CA_BUNDLE
 
 _DEFAULT_TIMEOUT = 10.0
 _BASE_URL = "https://mafreebox.freebox.fr/api/v4"
@@ -48,10 +56,29 @@ def main() -> int:
     print()
 
     try:
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--disable-ssl-verify",
+            action="store_true",
+            help="Disable SSL verification checks"
+        )
+        args = parser.parse_args()
+
+        # Determine SSL verification
+        if args.disable_ssl_verify:
+            verify = False
+        else:
+            ssl_ctx = ssl.create_default_context()  # NOSONAR Python 3.13+ so secure
+            ssl_ctx.load_verify_locations(str(FREEBOX_CA_BUNDLE))  # Use embedded Root CA bundle
+            # Disable strict validating introduced in Python 3.13, which doesn't work with default Freebox certificates
+            ssl_ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
+            verify = ssl_ctx
+
         with httpx.Client(
             base_url=_BASE_URL,
             timeout=_DEFAULT_TIMEOUT,
             follow_redirects=True,
+            verify=verify
         ) as client:
             # Step 1: Request authorization
             print("Step 1: Requesting authorization from Freebox...")
@@ -77,7 +104,7 @@ def main() -> int:
 
             # Step 3: Poll for authorization
             print("Step 3: Polling for authorization status...")
-            app_token, status = _poll_authorization(client, track_id)
+            status = _poll_authorization(client, track_id)
 
             if status == "granted":
                 print("✓ Authorization granted!")
@@ -94,7 +121,6 @@ targets:
   freebox:
     type: freebox
     host: mafreebox.freebox.fr
-    username: admin
     password: <paste_the_app_token_here>
                 """)
                 return 0
@@ -134,7 +160,7 @@ def _request_authorization(client: httpx.Client) -> dict[str, Any]:
     return data.get("result", {})
 
 
-def _poll_authorization(client: httpx.Client, track_id: str) -> tuple[str, str]:
+def _poll_authorization(client: httpx.Client, track_id: str) -> str:
     """Poll the authorization endpoint until user grants or times out.
 
     Returns (app_token, status).
@@ -151,10 +177,9 @@ def _poll_authorization(client: httpx.Client, track_id: str) -> tuple[str, str]:
 
         result = data.get("result", {})
         status = result.get("status")
-        app_token = result.get("app_token", "")
 
         if status == "granted":
-            return app_token, status
+            return status
         elif status == "denied":
             raise RuntimeError("User denied authorization on the Freebox device")
         elif status == "timeout":

@@ -57,6 +57,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import ipaddress
+import ssl
 from typing import Any
 
 import httpx
@@ -111,7 +112,11 @@ class FreeboxRouterAdapter(BaseAdapter):
         """Create an httpx client with appropriate defaults."""
         # Determine SSL verification
         if self.target.verify_ssl:
-            verify = str(FREEBOX_CA_BUNDLE)  # Use embedded Root CA bundle
+            ssl_ctx = ssl.create_default_context()  # NOSONAR Python 3.13+ so secure
+            ssl_ctx.load_verify_locations(str(FREEBOX_CA_BUNDLE))  # Use embedded Root CA bundle
+            # Disable strict validating introduced in Python 3.13, which doesn't work with default Freebox certificates
+            ssl_ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
+            verify = ssl_ctx
         else:
             verify = False
 
