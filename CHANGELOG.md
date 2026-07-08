@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-08
+
+### Fixed
+
+- Freebox certificate bundle and `VERIFY_X509_STRICT` handling for Python 3.13 compatibility
+- Added `--disable-ssl-verify` option to `get_freebox_app_token` utility script
+- Retrieve Freebox gateway and subnet from DHCP config instead of hardcoded values
+- GitHub CI badge URL
+
 ## [0.2.0] - 2026-05-12
 
 ### Added
@@ -71,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Code of Conduct
 - Security policy
 
-[Unreleased]: https://github.com/grogui42/routerless/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/grogui42/routerless/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/grogui42/routerless/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/grogui42/routerless/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/grogui42/routerless/releases/tag/v0.1.0
